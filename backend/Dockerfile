@@ -7,10 +7,7 @@ ENV PYTHONUNBUFFERED=1
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# No additional system dependencies required
 
 # Install Python dependencies
 COPY requirements.txt /app/
@@ -18,7 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source and document knowledge base
 COPY app /app/app
-COPY documents /app/documents
 
 # Expose FastAPI application port
 EXPOSE 8000
