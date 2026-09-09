@@ -19,3 +19,6 @@ pnpm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Project environment variables
+.env
