@@ -1,0 +1,24 @@
+# Byte-compiled / optimized / Python internals (NEVER COMMIT THESE)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches & virtual environments
+.venv/
+venv/
+ENV/
+.pytest_cache/
+
+# Local databases & storage
+*.db
+*.sqlite3
+chroma_db/
+
+# Secrets & Environment variables
+.env
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
