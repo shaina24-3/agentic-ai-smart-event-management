@@ -4,26 +4,60 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function Home() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+
+  const handleLogin = (
+    e: React.FormEvent<HTMLFormElement>
+  ) => {
     e.preventDefault();
 
-    if (!email || !password) {
+    if (!email.trim() || !password.trim()) {
       alert("Please enter your email and password.");
       return;
+    }
+
+    if (!email.includes("@")) {
+      alert("Please enter a valid email address.");
+      return;
+    }
+
+    // Frontend-only login for now.
+    // This will be replaced with the FastAPI authentication API later.
+    localStorage.setItem(
+      "userEmail",
+      email.trim()
+    );
+
+    if (rememberMe) {
+      localStorage.setItem(
+        "rememberMe",
+        "true"
+      );
+    } else {
+      localStorage.removeItem("rememberMe");
     }
 
     router.push("/dashboard");
   };
 
+  const handleForgotPassword = () => {
+    alert(
+      "Password reset will be connected to the API later."
+    );
+  };
+
   return (
-    <main className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
+    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-8">
+
       <div className="w-full max-w-md">
-        {/* Logo / Project Name */}
-        <div className="text-center mb-8">
+
+        {/* Logo and Heading */}
+        <div className="mb-8 text-center">
+
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white shadow-lg">
             SE
           </div>
@@ -35,10 +69,12 @@ export default function Home() {
           <p className="mt-2 text-slate-500">
             Manage your events smarter and easier
           </p>
+
         </div>
 
         {/* Login Card */}
         <div className="rounded-2xl bg-white p-8 shadow-xl">
+
           <h2 className="text-2xl font-semibold text-slate-900">
             Welcome Back
           </h2>
@@ -47,7 +83,12 @@ export default function Home() {
             Sign in to continue to your account
           </p>
 
-          <form onSubmit={handleLogin} className="mt-6 space-y-5">
+          {/* Login Form */}
+          <form
+            onSubmit={handleLogin}
+            className="mt-6 space-y-5"
+          >
+
             {/* Email */}
             <div>
               <label
@@ -62,7 +103,9 @@ export default function Home() {
                 type="email"
                 placeholder="Enter your email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) =>
+                  setEmail(e.target.value)
+                }
                 className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
             </div>
@@ -81,27 +124,39 @@ export default function Home() {
                 type="password"
                 placeholder="Enter your password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) =>
+                  setPassword(e.target.value)
+                }
                 className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
             </div>
 
-            {/* Remember / Forgot */}
+            {/* Remember Me / Forgot Password */}
             <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center gap-2 text-slate-600">
+
+              <label className="flex cursor-pointer items-center gap-2 text-slate-600">
+
                 <input
                   type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) =>
+                    setRememberMe(e.target.checked)
+                  }
                   className="h-4 w-4 rounded border-slate-300"
                 />
+
                 Remember me
+
               </label>
 
               <button
                 type="button"
+                onClick={handleForgotPassword}
                 className="font-medium text-blue-600 hover:text-blue-800"
               >
                 Forgot Password?
               </button>
+
             </div>
 
             {/* Login Button */}
@@ -111,23 +166,27 @@ export default function Home() {
             >
               Login
             </button>
+
           </form>
 
           {/* Register */}
           <p className="mt-6 text-center text-sm text-slate-500">
-            Don't have an account?{" "}
+
+            Don&apos;t have an account?{" "}
+
             <button
               type="button"
+              onClick={() =>
+                router.push("/register")
+              }
               className="font-semibold text-blue-600 hover:text-blue-800"
             >
               Create Account
             </button>
-          </p>
-        </div>
 
-        <p className="mt-6 text-center text-xs text-slate-400">
-          Smart Event Management System
-        </p>
+          </p>
+
+        </div>
       </div>
     </main>
   );
