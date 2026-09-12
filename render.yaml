@@ -1,0 +1,46 @@
+# Render Blueprint for this repo.
+# https://render.com/docs/blueprint-spec
+#
+# Deploys 3 resources:
+#   1. A managed PostgreSQL database
+#   2. The FastAPI backend (Docker, backend/Dockerfile)
+#   3. The Next.js frontend (Docker, root Dockerfile)
+#
+# In the Render dashboard: New -> Blueprint -> select this repo.
+# NEXT_PUBLIC_API_URL must be filled in manually (see note below).
+
+databases:
+  - name: agentic-events-db
+    plan: free
+    databaseName: event_management
+    user: event_management
+
+services:
+  - type: web
+    name: agentic-events-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/venues
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: agentic-events-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+
+  - type: web
+    name: agentic-events-frontend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      # Set this to the backend service's public URL after the backend's
+      # first deploy (e.g. https://agentic-events-backend.onrender.com).
+      # NEXT_PUBLIC_* vars are baked in at build time, so changing this
+      # value requires a manual redeploy of the frontend to take effect.
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
