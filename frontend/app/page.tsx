@@ -15,6 +15,8 @@ export default function Home() {
   ) => {
     e.preventDefault();
 
+    console.log("LOGIN BUTTON CLICKED");
+
     if (!email.trim() || !password.trim()) {
       alert("Please enter your email and password.");
       return;
@@ -25,21 +27,9 @@ export default function Home() {
       return;
     }
 
-    // Frontend-only login for now.
-    // This will be replaced with the FastAPI authentication API later.
-    localStorage.setItem(
-      "userEmail",
-      email.trim()
-    );
+    localStorage.setItem("userEmail", email.trim());
 
-    if (rememberMe) {
-      localStorage.setItem(
-        "rememberMe",
-        "true"
-      );
-    } else {
-      localStorage.removeItem("rememberMe");
-    }
+    console.log("GOING TO DASHBOARD");
 
     router.push("/dashboard");
   };
