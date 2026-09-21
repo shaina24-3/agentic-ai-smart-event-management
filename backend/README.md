@@ -205,4 +205,4 @@ This project is licensed under the MIT License. Available for academic, demonstr
 ---
 Live Demo
 --
-Backend -> https://backend-event-3-toqe.onrender.com/docs
+Backend -> https://agentic-ai-smart-event-management-infosys.onrender.com/docs
