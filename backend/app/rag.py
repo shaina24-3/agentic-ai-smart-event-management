@@ -1,56 +1,25 @@
-from typing import List
-from sqlalchemy.orm import Session
-from .models import KnowledgeChunk, KnowledgeDocument
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from typing import List, Tuple
 
-def retrieve_relevant_chunks(db: Session, query: str, top_k: int = 3) -> List[str]:
-    """
-    Retrieves the most relevant knowledge chunks for a given query
-    using lightweight keyword scoring and fallback text search.
-    """
-    if not query or not query.strip():
-        return []
+POLICY_DOCUMENTS = [
+    "Cancellation Policy: Participants may cancel their event registrations up to 24 hours before the scheduled start time without any penalty.",
+    "Event Capacity Rules: Events strictly adhere to venue room capacities. Once maximum capacity is reached, new registrations are blocked automatically.",
+    "Venue Policy: Venues are allocated based on event requirements. Only one event can occupy a venue at any given time slot.",
+    "Attendance Policy: Registered attendees must check in with their registered email address at least 15 minutes before the event begins.",
+    "FAQ: Organizers with ADMIN permissions can create, update, or cancel events, while participants can register and manage their reservations."
+]
 
-    chunks = db.query(KnowledgeChunk).all()
-    if not chunks:
-        return []
+class LocalRAG:
+    def __init__(self, docs: List[str]):
+        self.docs = docs
+        self.vectorizer = TfidfVectorizer(stop_words='english')
+        self.doc_vectors = self.vectorizer.fit_transform(self.docs)
 
-    query_words = set(query.lower().split())
-    scored_chunks = []
+    def retrieve(self, query: str, top_k: int = 1) -> List[Tuple[str, float]]:
+        query_vec = self.vectorizer.transform([query])
+        similarities = cosine_similarity(query_vec, self.doc_vectors).flatten()
+        best_indices = similarities.argsort()[::-1][:top_k]
+        return [(self.docs[idx], float(similarities[idx])) for idx in best_indices if similarities[idx] > 0.05]
 
-    for chunk in chunks:
-        chunk_words = set(chunk.chunk_text.lower().split())
-        overlap = len(query_words.intersection(chunk_words))
-        if overlap > 0:
-            scored_chunks.append((overlap, chunk.chunk_text))
-
-    scored_chunks.sort(key=lambda x: x[0], reverse=True)
-    
-    if scored_chunks:
-        return [text for _, text in scored_chunks[:top_k]]
-
-    # Fallback: Return first few chunks if no exact word overlap
-    return [c.chunk_text for c in chunks[:top_k]]
-
-def add_document_and_chunks(db: Session, title: str, content: str, chunk_size: int = 400):
-    """
-    Helper to chunk and store documents into the knowledge base.
-    """
-    doc = KnowledgeDocument(title=title, file_type="text")
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
-
-    words = content.split()
-    chunks = []
-    for i in range(0, len(words), chunk_size):
-        chunk_str = " ".join(words[i:i + chunk_size])
-        chunk = KnowledgeChunk(
-            document_id=doc.id,
-            chunk_text=chunk_str,
-            chunk_index=len(chunks)
-        )
-        chunks.append(chunk)
-
-    db.bulk_save_objects(chunks)
-    db.commit()
-    return doc.id
+rag_engine = LocalRAG(POLICY_DOCUMENTS)
