@@ -1,125 +1,106 @@
-import time
 import re
+import time
 from sqlalchemy.orm import Session
-from .models import AgentSession, AgentRun, ToolCall
-from .tools import search_events_tool, register_participant_tool, cancel_registration_tool
-from .rag import retrieve_relevant_chunks
+from .tools import search_events, register_participant, cancel_registration
+from .rag import rag_engine
+from .models import AgentRun
 
-def run_agent_turn(db: Session, user_id: int, message: str, session_id: str = None) -> dict:
+def execute_agent_workflow(db: Session, user_id: int, message: str) -> dict:
     start_time = time.time()
-    
-    if not session_id:
-        session_id = f"session_{user_id}_{int(start_time)}"
-        
-    session = db.query(AgentSession).filter(AgentSession.id == session_id).first()
-    if not session:
-        session = AgentSession(id=session_id, user_id=user_id)
-        db.add(session)
-        db.commit()
-
-    msg_lower = message.lower()
-    intent = "GENERAL"
+    lowered = message.lower()
     tools_used = []
-    tool_logs = []
-    reply = ""
+    response_text = ""
+    intent = "UNKNOWN"
+    tool_input = ""
+    tool_output = ""
 
-    # Rule-based intent routing
-    if "register" in msg_lower or "book" in msg_lower:
-        intent = "REGISTRATION"
-        match = re.search(r'\d+', msg_lower)
+    # 1. Registration Execution
+    if any(k in lowered for k in ["register", "sign up", "book"]):
+        intent = "REGISTER_PARTICIPANT"
+        match = re.search(r'\b\d+\b', message)
         if match:
             event_id = int(match.group())
-            t_start = time.time()
-            res = register_participant_tool(db, user_id, event_id)
-            t_latency = (time.time() - t_start) * 1000
-            tools_used.append("register_participant_tool")
-            tool_logs.append({
-                "tool_name": "register_participant_tool",
-                "tool_input": f"event_id={event_id}",
-                "tool_output": str(res.get("output")),
-                "latency_ms": t_latency
-            })
-            reply = res.get("output")
+            tools_used.append("register_participant")
+            tool_input = f"event_id={event_id}"
+            res = register_participant(db, user_id, event_id)
+            tool_output = str(res)
+            response_text = res["message"]
         else:
-            reply = "Please specify the ID of the event you would like to register for."
-
-    elif "cancel" in msg_lower:
-        intent = "CANCELLATION"
-        match = re.search(r'\d+', msg_lower)
-        if match:
-            event_id = int(match.group())
-            t_start = time.time()
-            res = cancel_registration_tool(db, user_id, event_id)
-            t_latency = (time.time() - t_start) * 1000
-            tools_used.append("cancel_registration_tool")
-            tool_logs.append({
-                "tool_name": "cancel_registration_tool",
-                "tool_input": f"event_id={event_id}",
-                "tool_output": str(res.get("output")),
-                "latency_ms": t_latency
-            })
-            reply = res.get("output")
-        else:
-            reply = "Please specify the ID of the event registration you want to cancel."
-
-    elif "event" in msg_lower or "schedule" in msg_lower or "list" in msg_lower:
-        intent = "SEARCH_EVENTS"
-        t_start = time.time()
-        res = search_events_tool(db)
-        t_latency = (time.time() - t_start) * 1000
-        tools_used.append("search_events_tool")
-        tool_logs.append({
-            "tool_name": "search_events_tool",
-            "tool_input": message,
-            "tool_output": str(res.get("output")),
-            "latency_ms": t_latency
-        })
-        reply = f"Here are the available scheduled events:\n\n{res.get('output')}"
-
-    else:
-        intent = "RAG_KNOWLEDGE"
-        try:
-            chunks = retrieve_relevant_chunks(db, message, top_k=2)
-            if chunks:
-                context_str = "\n".join(chunks)
-                reply = f"Here is the relevant information:\n{context_str}"
+            intent = "SEARCH_THEN_REGISTER"
+            tools_used.append("search_events")
+            events = search_events(db)
+            tool_output = str(events)
+            if events:
+                target = events[0]
+                tools_used.append("register_participant")
+                reg_res = register_participant(db, user_id, target["id"])
+                response_text = f"Found event '{target['title']}' (ID: {target['id']}). Result: {reg_res['message']}"
             else:
-                reply = "I can assist you with event search, registration, and schedules. How can I help you today?"
-        except Exception:
-            reply = "I can help you search, book, or cancel event registrations. What would you like to do?"
+                response_text = "No open events found to register for."
 
-    total_latency = (time.time() - start_time) * 1000
+    # 2. Cancellation Execution
+    elif any(k in lowered for k in ["cancel my registration", "deregister", "drop"]):
+        intent = "CANCEL_REGISTRATION"
+        match = re.search(r'\b\d+\b', message)
+        if match:
+            event_id = int(match.group())
+            tools_used.append("cancel_registration")
+            res = cancel_registration(db, user_id, event_id)
+            tool_output = str(res)
+            response_text = res["message"]
+        else:
+            response_text = "Please specify the ID of the event you wish to cancel."
 
-    # Persist the Agent Run
-    run_entry = AgentRun(
-        session_id=session_id,
+    # 3. Event Search Execution
+    elif any(k in lowered for k in ["find", "search", "list", "show events", "workshop"]):
+        intent = "SEARCH_EVENTS"
+        tools_used.append("search_events")
+        words = [w for w in lowered.split() if w not in ["find", "search", "events", "for", "a", "an", "the", "me"]]
+        keyword = words[0] if words else ""
+        tool_input = f"keyword={keyword}"
+        events = search_events(db, keyword)
+        tool_output = str(events)
+        if events:
+            response_text = "Matching events: " + ", ".join([f"{e['title']} (ID: {e['id']})" for e in events])
+        else:
+            response_text = "No matching events found."
+
+    # 4. Policy/RAG Routing
+    elif any(k in lowered for k in ["policy", "rule", "faq", "terms", "deadline", "how to"]):
+        intent = "RAG_POLICY_SEARCH"
+        tools_used.append("search_event_policy")
+        tool_input = message
+        docs = rag_engine.retrieve(message)
+        if docs:
+            tool_output = docs[0][0]
+            response_text = f"Policy Reference: {docs[0][0]}"
+        else:
+            response_text = "No specific policy document directly matches your query."
+
+    # 5. Default Fallback
+    else:
+        intent = "GENERAL_QUERY"
+        response_text = "I can help you discover events, register or cancel reservations, and retrieve venue policies."
+
+    latency = round((time.time() - start_time) * 1000, 2)
+
+    # Persist agent trace
+    run_log = AgentRun(
         user_id=user_id,
         user_request=message,
         detected_intent=intent,
-        tool_selected=",".join(tools_used) if tools_used else None,
-        latency_ms=total_latency,
-        final_response=reply
+        tool_selected=",".join(tools_used),
+        tool_input=tool_input,
+        tool_output=tool_output,
+        latency_ms=latency,
+        final_response=response_text
     )
-    db.add(run_entry)
-    db.commit()
-    db.refresh(run_entry)
-
-    # Persist Tool Calls
-    for tl in tool_logs:
-        tc = ToolCall(
-            run_id=run_entry.id,
-            tool_name=tl["tool_name"],
-            tool_input=tl["tool_input"],
-            tool_output=tl["tool_output"],
-            latency_ms=tl["latency_ms"]
-        )
-        db.add(tc)
+    db.add(run_log)
     db.commit()
 
     return {
-        "reply": reply,
-        "session_id": session_id,
-        "detected_intent": intent,
+        "response": response_text,
+        "intent": intent,
         "tools_used": tools_used,
-        "tool_calls": tool_logs
+        "latency_ms": latency
     }
