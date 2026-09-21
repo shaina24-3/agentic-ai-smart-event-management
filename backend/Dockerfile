@@ -7,10 +7,7 @@ ENV PYTHONUNBUFFERED=1
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# No additional system dependencies required
 
 # Install Python dependencies
 COPY requirements.txt /app/
@@ -18,10 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source and document knowledge base
 COPY app /app/app
-COPY documents /app/documents
 
 # Expose FastAPI application port
 EXPOSE 8000
 
-# Default runner command using uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default runner command using uvicorn.
+# Render injects a PORT environment variable that the container MUST bind to;
+# it falls back to 8000 for local docker-compose where PORT is unset.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
