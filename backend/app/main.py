@@ -27,7 +27,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -55,20 +55,31 @@ def startup_event():
 # --- Authentication Routes ---
 @app.post("/api/auth/register", response_model=UserOut)
 def register_user(payload: UserRegister, request: Request, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == payload.email).first():
+    # Check existing
+    existing = db.query(User).filter(User.email == payload.email).first()
+    if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    user = User(
-        name=payload.name,
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        role=payload.role or "USER"
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    record_audit(db, user.id, "USER_REGISTER", "users", user.id, f"Registered user {user.email}", request)
-    return user
+    
+    try:
+        user = User(
+            name=payload.name,
+            email=payload.email,
+            password_hash=hash_password(payload.password),
+            role=payload.role or "USER"
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database user creation error: {str(e)}")
 
+    try:
+        record_audit(db, user.id, "USER_REGISTER", "users", user.id, f"Registered user {user.email}", request)
+    except Exception as audit_err:
+        print(f"Audit log warning (non-fatal): {audit_err}")
+
+    return user
 @app.post("/api/auth/login", response_model=Token)
 def login_user(payload: UserLogin, request: Request, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
