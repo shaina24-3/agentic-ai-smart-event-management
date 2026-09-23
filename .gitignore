@@ -19,3 +19,18 @@ pnpm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Python & Backend
+__pycache__/
+*.py[cod]
+*$py.class
+*.db
+*.sqlite3
+venv/
+.venv/
+
+# Environment variables (keep .env private, only share .env.example)
+.env
+*.env
+*.env.local
+!*.env.example

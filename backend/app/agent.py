@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from .tools import search_events, register_participant, cancel_registration
 from .rag import rag_engine
 from .models import AgentRun
+from .models import AgentRun, ToolCall
 
 def execute_agent_workflow(db: Session, user_id: int, message: str) -> dict:
     start_time = time.time()
@@ -97,6 +98,19 @@ def execute_agent_workflow(db: Session, user_id: int, message: str) -> dict:
     )
     db.add(run_log)
     db.commit()
+    db.refresh(run_log)
+
+    for tool_name in tools_used:
+        t_call = ToolCall(
+            run_id=run_log.id,
+            tool_name=tool_name,
+            tool_input=tool_input,
+            tool_output=tool_output,
+            latency_ms=latency
+        )
+        db.add(t_call)
+    if tools_used:
+        db.commit()
 
     return {
         "response": response_text,

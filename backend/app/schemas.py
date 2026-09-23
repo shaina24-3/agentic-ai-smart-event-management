@@ -25,6 +25,11 @@ class VenueCreate(BaseModel):
     capacity: int
     location: str
 
+class VenueUpdate(BaseModel):
+    name: Optional[str] = None
+    capacity: Optional[int] = None
+    location: Optional[str] = None
+
 class VenueOut(VenueCreate):
     id: int
     class Config:
@@ -38,10 +43,20 @@ class EventCreate(BaseModel):
     venue_id: int
     capacity: int
 
+class EventUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    date: Optional[str] = None
+    time: Optional[str] = None
+    venue_id: Optional[int] = None
+    capacity: Optional[int] = None
+    status: Optional[str] = None
+
 class EventOut(EventCreate):
     id: int
     status: str
     created_by: int
+    created_by: Optional[int] = None
     class Config:
         from_attributes = True
 
@@ -51,6 +66,18 @@ class RegistrationOut(BaseModel):
     event_id: int
     status: str
     registered_at: datetime
+    class Config:
+        from_attributes = True
+
+class AuditLogOut(BaseModel):
+    id: int
+    user_id: Optional[int] = None
+    action: str
+    resource_type: Optional[str] = None
+    resource_id: Optional[int] = None
+    ip_address: Optional[str] = None
+    details: Optional[str] = None
+    timestamp: datetime
     class Config:
         from_attributes = True
 
