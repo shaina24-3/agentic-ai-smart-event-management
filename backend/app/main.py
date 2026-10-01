@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from typing import List, Optional
 
@@ -19,6 +19,7 @@ from .schemas import (
 )
 from .auth import hash_password, verify_password, create_access_token, get_current_user, require_admin
 from .agent import execute_agent_workflow
+from .tools import get_available_venues
 
 Base.metadata.create_all(bind=engine)
 
@@ -40,17 +41,62 @@ app.add_middleware(
 @app.on_event("startup")
 def seed_data():
     db = next(get_db())
-    if not db.query(User).first():
-        admin = User(name="Admin User", email="admin@events.com", password_hash=hash_password("admin123"), role="ADMIN")
-        user = User(name="Participant One", email="user@events.com", password_hash=hash_password("user123"), role="USER")
-        db.add_all([admin, user])
+
+    # Create default admin if not already present
+    admin = db.query(User).filter(User.email == "admin@events.com").first()
+
+    if not admin:
+        admin = User(
+            name="Admin User",
+            email="admin@events.com",
+            password_hash=hash_password("admin123"),
+            role="ADMIN"
+        )
+        db.add(admin)
         db.commit()
-        
-        venue = Venue(name="Auditorium Alpha", capacity=100, location="Building A, Tech Park")
-        db.add(venue)
+        db.refresh(admin)
+
+    # Create default participant if not already present
+    user = db.query(User).filter(User.email == "user@events.com").first()
+
+    if not user:
+        user = User(
+            name="Participant One",
+            email="user@events.com",
+            password_hash=hash_password("user123"),
+            role="USER"
+        )
+        db.add(user)
         db.commit()
 
-        event = Event(title="AI & Agentic Systems Workshop", description="Hands-on LLM agent design", date="2026-10-15", time="10:00 AM", venue_id=venue.id, capacity=50, created_by=admin.id)
+    # Create default venue if not already present
+    venue = db.query(Venue).filter(Venue.name == "Auditorium Alpha").first()
+
+    if not venue:
+        venue = Venue(
+            name="Auditorium Alpha",
+            capacity=100,
+            location="Building A, Tech Park"
+        )
+        db.add(venue)
+        db.commit()
+        db.refresh(venue)
+
+    # Create default event if not already present
+    event = db.query(Event).filter(
+        Event.title == "AI & Agentic Systems Workshop"
+    ).first()
+
+    if not event:
+        event = Event(
+            title="AI & Agentic Systems Workshop",
+            description="Hands-on LLM agent design",
+            date="2026-10-15",
+            time="10:00 AM",
+            venue_id=venue.id,
+            capacity=50,
+            created_by=admin.id
+        )
         db.add(event)
         db.commit()
 
@@ -108,6 +154,17 @@ def create_venue(payload: VenueCreate, db: Session = Depends(get_db), admin: Use
 def list_venues(db: Session = Depends(get_db)):
     return db.query(Venue).all()
 
+
+@app.get("/api/venues/available", response_model=List[VenueOut])
+def list_available_venues(
+    date: Optional[str] = None,
+    time: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    if not date or not time:
+        return db.query(Venue).all()
+    return get_available_venues(db, date, time)
+
 # Event Endpoints
 @app.get("/api/venues/{venue_id}", response_model=VenueOut)
 def get_venue(venue_id: int, db: Session = Depends(get_db)):
@@ -131,8 +188,41 @@ def update_venue(venue_id: int, payload: VenueUpdate, db: Session = Depends(get_
 # ============================================================================
 # 3. Event Endpoints
 # ============================================================================
+def event_response_payload(event: Event):
+    venue_name = event.venue.name if event.venue else f"Venue {event.venue_id}"
+    return {
+        "id": event.id,
+        "title": event.title,
+        "description": event.description,
+        "date": event.date,
+        "time": event.time,
+        "venue_id": event.venue_id,
+        "venue": venue_name,
+        "venue_name": venue_name,
+        "capacity": event.capacity,
+        "status": event.status,
+        "created_by": event.created_by,
+    }
+
+
 @app.post("/api/events", response_model=EventOut)
 def create_event(payload: EventCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    venue = db.query(Venue).filter(Venue.id == payload.venue_id).first()
+    if not venue:
+        raise HTTPException(status_code=404, detail="Venue not found")
+
+    conflict = db.query(Event).filter(
+        Event.venue_id == payload.venue_id,
+        Event.date == payload.date,
+        Event.time == payload.time,
+        Event.status == "SCHEDULED",
+    ).first()
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Venue '{venue.name}' is already booked on {payload.date} at {payload.time}. Please choose another time or venue.",
+        )
+
     event = Event(**payload.model_dump(), created_by=admin.id)
     db.add(event)
     db.commit()
@@ -142,23 +232,26 @@ def create_event(payload: EventCreate, db: Session = Depends(get_db), admin: Use
     db.add(audit)
     db.commit()
 
-    return event
+    return event_response_payload(event)
 
 @app.get("/api/events", response_model=List[EventOut])
-def list_events(db: Session = Depends(get_db)):
-    return db.query(Event).filter(Event.status == "SCHEDULED").all()
-def list_events(keyword: Optional[str] = None, db: Session = Depends(get_db)):
-    query = db.query(Event).filter(Event.status == "SCHEDULED")
+def list_events(
+    keyword: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(Event).options(joinedload(Event.venue)).filter(Event.status == "SCHEDULED")
+
     if keyword:
         query = query.filter(Event.title.ilike(f"%{keyword}%"))
-    return query.all()
+
+    return [event_response_payload(event) for event in query.all()]
 
 @app.get("/api/events/{event_id}", response_model=EventOut)
 def get_event(event_id: int, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
+    event = db.query(Event).options(joinedload(Event.venue)).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
-    return event
+    return event_response_payload(event)
 
 @app.put("/api/events/{event_id}", response_model=EventOut)
 def update_event(event_id: int, payload: EventUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
@@ -248,3 +341,44 @@ def get_agent_logs(db: Session = Depends(get_db), admin: User = Depends(require_
 @app.get("/api/admin/audit-logs", response_model=List[AuditLogOut])
 def get_audit_logs(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     return db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(100).all()
+
+# Admin User Management
+@app.get("/api/admin/users")
+def get_all_users(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    users = db.query(User).all()
+    return [{"id": u.id, "name": u.name, "email": u.email, "role": u.role, "created_at": str(u.created_at)} for u in users]
+
+@app.delete("/api/admin/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own admin account.")
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    user_name = target_user.name
+    db.delete(target_user)
+    db.commit()
+
+    audit = AuditLog(user_id=admin.id, action="DELETE_USER", resource_type="users", resource_id=user_id, details=f"Admin deleted user {user_name}")
+    db.add(audit)
+    db.commit()
+
+    return {"message": f"User '{user_name}' successfully removed."}
+
+# Dashboard Global Statistics (Matches Reference Design)
+@app.get("/api/admin/dashboard-stats")
+def get_dashboard_stats(db: Session = Depends(get_db)):
+    total_events = db.query(Event).filter(Event.status == "SCHEDULED").count()
+    total_attendees = db.query(Registration).filter(Registration.status == "CONFIRMED").count()
+    total_venues = db.query(Venue).count()
+    agent_queries = db.query(AgentRun).count()
+    total_users = db.query(User).count()
+
+    return {
+        "total_events": total_events,
+        "total_attendees": total_attendees,
+        "total_venues": total_venues,
+        "agent_queries": agent_queries,
+        "total_users": total_users
+    }
+

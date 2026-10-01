@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function Home() {
+export default function LoginPage() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
 
-  const handleLogin = (
+  const handleLogin = async (
     e: React.FormEvent<HTMLFormElement>
   ) => {
     e.preventDefault();
@@ -25,23 +25,99 @@ export default function Home() {
       return;
     }
 
-    // Frontend-only login for now.
-    // This will be replaced with the FastAPI authentication API later.
-    localStorage.setItem(
-      "userEmail",
-      email.trim()
-    );
-
-    if (rememberMe) {
-      localStorage.setItem(
-        "rememberMe",
-        "true"
-      );
-    } else {
+    try {
+      // Clear previous session BEFORE login
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("userName");
+      localStorage.removeItem("userEmail");
+      localStorage.removeItem("userRole");
       localStorage.removeItem("rememberMe");
-    }
 
-    router.push("/dashboard");
+      // Login
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: "Login User",
+            email: email.trim(),
+            password: password,
+            role: "USER",
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.detail || "Login failed.");
+        return;
+      }
+
+      const token = data.access_token;
+
+      if (!token) {
+        alert("Login failed: access token was not received.");
+        return;
+      }
+
+      // Store ONLY the new token
+      localStorage.setItem("access_token", token);
+
+      // Ask backend who actually logged in
+      const userResponse = await fetch(
+        "http://127.0.0.1:8000/api/auth/me",
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+        }
+      );
+
+      if (!userResponse.ok) {
+        localStorage.removeItem("access_token");
+        alert("Could not verify logged-in user.");
+        return;
+      }
+
+      const userData = await userResponse.json();
+
+      console.log("LOGIN USER:", userData);
+      console.log("LOGIN ROLE:", userData.role);
+
+      // Store actual backend user information
+      localStorage.setItem(
+        "userEmail",
+        userData.email || email.trim()
+      );
+
+      localStorage.setItem(
+        "userName",
+        userData.name || email.trim()
+      );
+
+      localStorage.setItem(
+        "userRole",
+        String(userData.role || "").toUpperCase()
+      );
+
+      if (rememberMe) {
+        localStorage.setItem("rememberMe", "true");
+      }
+
+      alert("Login successful!");
+
+      router.push("/dashboard");
+    } catch (error) {
+      console.error(error);
+      alert("Cannot connect to the backend.");
+    }
   };
 
   const handleForgotPassword = () => {
@@ -51,142 +127,109 @@ export default function Home() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-8">
+    <main className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
 
-      <div className="w-full max-w-md">
+        <h1 className="text-3xl font-bold text-center text-slate-900">
+          Smart Event Management
+        </h1>
 
-        {/* Logo and Heading */}
-        <div className="mb-8 text-center">
+        <p className="mt-2 text-center text-slate-600">
+          Login to your account
+        </p>
 
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white shadow-lg">
-            SE
+        <form
+          onSubmit={handleLogin}
+          className="mt-8 space-y-5"
+        >
+
+          {/* Email */}
+          <div>
+            <label
+              htmlFor="email"
+              className="mb-2 block text-sm font-medium text-slate-700"
+            >
+              Email
+            </label>
+
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your email"
+              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            />
           </div>
 
-          <h1 className="text-3xl font-bold text-slate-900">
-            Smart Event Management
-          </h1>
-
-          <p className="mt-2 text-slate-500">
-            Manage your events smarter and easier
-          </p>
-
-        </div>
-
-        {/* Login Card */}
-        <div className="rounded-2xl bg-white p-8 shadow-xl">
-
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Welcome Back
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-500">
-            Sign in to continue to your account
-          </p>
-
-          {/* Login Form */}
-          <form
-            onSubmit={handleLogin}
-            className="mt-6 space-y-5"
-          >
-
-            {/* Email */}
-            <div>
-              <label
-                htmlFor="email"
-                className="mb-2 block text-sm font-medium text-slate-700"
-              >
-                Email Address
-              </label>
-
-              <input
-                id="email"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) =>
-                  setEmail(e.target.value)
-                }
-                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-              />
-            </div>
-
-            {/* Password */}
-            <div>
-              <label
-                htmlFor="password"
-                className="mb-2 block text-sm font-medium text-slate-700"
-              >
-                Password
-              </label>
-
-              <input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) =>
-                  setPassword(e.target.value)
-                }
-                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-              />
-            </div>
-
-            {/* Remember Me / Forgot Password */}
-            <div className="flex items-center justify-between text-sm">
-
-              <label className="flex cursor-pointer items-center gap-2 text-slate-600">
-
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) =>
-                    setRememberMe(e.target.checked)
-                  }
-                  className="h-4 w-4 rounded border-slate-300"
-                />
-
-                Remember me
-
-              </label>
-
-              <button
-                type="button"
-                onClick={handleForgotPassword}
-                className="font-medium text-blue-600 hover:text-blue-800"
-              >
-                Forgot Password?
-              </button>
-
-            </div>
-
-            {/* Login Button */}
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700"
+          {/* Password */}
+          <div>
+            <label
+              htmlFor="password"
+              className="mb-2 block text-sm font-medium text-slate-700"
             >
-              Login
-            </button>
+              Password
+            </label>
 
-          </form>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            />
+          </div>
 
-          {/* Register */}
-          <p className="mt-6 text-center text-sm text-slate-500">
+          {/* Remember Me */}
+          <div className="flex items-center justify-between">
 
-            Don&apos;t have an account?{" "}
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) =>
+                  setRememberMe(e.target.checked)
+                }
+                className="h-4 w-4"
+              />
+
+              Remember me
+            </label>
 
             <button
               type="button"
-              onClick={() =>
-                router.push("/register")
-              }
-              className="font-semibold text-blue-600 hover:text-blue-800"
+              onClick={handleForgotPassword}
+              className="text-sm font-medium text-blue-600 hover:text-blue-800"
             >
-              Create Account
+              Forgot Password?
             </button>
 
-          </p>
+          </div>
 
-        </div>
+          {/* Login Button */}
+          <button
+            type="submit"
+            className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700"
+          >
+            Login
+          </button>
+
+        </form>
+
+        {/* Register */}
+        <p className="mt-6 text-center text-sm text-slate-600">
+          Don't have an account?{" "}
+
+          <button
+            type="button"
+            onClick={() => router.push("/register")}
+            className="font-semibold text-blue-600 hover:text-blue-800"
+          >
+            Create Account
+          </button>
+        </p>
+
       </div>
     </main>
   );

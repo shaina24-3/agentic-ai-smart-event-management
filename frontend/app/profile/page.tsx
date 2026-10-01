@@ -28,10 +28,29 @@ export default function Profile() {
       return;
     }
 
-    localStorage.setItem("userName", name.trim());
-    localStorage.setItem("userEmail", email.trim());
+    localStorage.setItem(
+      "userName",
+      name.trim()
+    );
+
+    localStorage.setItem(
+      "userEmail",
+      email.trim()
+    );
 
     alert("Profile updated successfully!");
+  };
+
+  const handleLogout = () => {
+    // Remove current user's session
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("ai-assistant-chat-messages");
+    localStorage.removeItem("userName");
+    localStorage.removeItem("userEmail");
+    localStorage.removeItem("rememberMe");
+
+    // Return to login
+    router.push("/");
   };
 
   const firstLetter = name.trim()
@@ -40,6 +59,7 @@ export default function Profile() {
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 md:px-6">
+
       <div className="mx-auto max-w-4xl">
 
         {/* Back Button */}
@@ -71,6 +91,7 @@ export default function Profile() {
             </div>
 
             <div>
+
               <h2 className="text-2xl font-semibold text-slate-900">
                 {name}
               </h2>
@@ -78,6 +99,7 @@ export default function Profile() {
               <p className="mt-1 text-slate-500">
                 Smart Event Management User
               </p>
+
             </div>
 
           </div>
@@ -87,6 +109,7 @@ export default function Profile() {
 
             {/* Name */}
             <div>
+
               <label
                 htmlFor="name"
                 className="mb-2 block text-sm font-medium text-slate-700"
@@ -104,10 +127,12 @@ export default function Profile() {
                 placeholder="Enter your name"
                 className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
+
             </div>
 
             {/* Email */}
             <div>
+
               <label
                 htmlFor="email"
                 className="mb-2 block text-sm font-medium text-slate-700"
@@ -125,10 +150,12 @@ export default function Profile() {
                 placeholder="Enter your email"
                 className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
+
             </div>
 
             {/* Role */}
             <div>
+
               <label
                 htmlFor="role"
                 className="mb-2 block text-sm font-medium text-slate-700"
@@ -143,6 +170,7 @@ export default function Profile() {
                 disabled
                 className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-3 text-slate-500"
               />
+
             </div>
 
             {/* Save Button */}
@@ -154,9 +182,21 @@ export default function Profile() {
               Save Profile
             </button>
 
+            {/* Logout Button */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full rounded-lg bg-red-600 py-3 font-semibold text-white transition hover:bg-red-700"
+            >
+              Logout
+            </button>
+
           </div>
+
         </div>
+
       </div>
+
     </main>
   );
 }

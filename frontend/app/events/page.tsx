@@ -9,7 +9,8 @@ type Event = {
   description: string;
   date: string;
   time: string;
-  venue: string;
+  venue?: string;
+  venue_name?: string;
   capacity: number;
 };
 
@@ -18,34 +19,73 @@ export default function MyEvents() {
 
   const [events, setEvents] = useState<Event[]>([]);
   const [search, setSearch] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadEvents = () => {
-      const savedEvents = localStorage.getItem("events");
+    const loadEvents = async () => {
+      const token = localStorage.getItem("access_token");
 
-      if (!savedEvents) {
-        setEvents([]);
+      if (!token) {
+        router.push("/");
         return;
       }
 
       try {
-        const parsedEvents: Event[] = JSON.parse(savedEvents);
-        setEvents(parsedEvents);
-      } catch {
-        setEvents([]);
+        // Check logged-in user's role
+        const userResponse = await fetch(
+          "http://127.0.0.1:8000/api/auth/me",
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!userResponse.ok) {
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("userEmail");
+          localStorage.removeItem("userName");
+          router.push("/");
+          return;
+        }
+
+        const userData = await userResponse.json();
+
+        console.log("EVENTS PAGE USER:", userData);
+
+        setIsAdmin(userData.role === "ADMIN");
+
+        // Load events
+        const response = await fetch(
+          "http://127.0.0.1:8000/api/events"
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          alert(data.detail || "Failed to load events.");
+          return;
+        }
+
+        setEvents(data);
+      } catch (error) {
+        console.error(error);
+        alert("Cannot connect to the backend.");
+      } finally {
+        setLoading(false);
       }
     };
 
     loadEvents();
-
-    window.addEventListener("focus", loadEvents);
-
-    return () => {
-      window.removeEventListener("focus", loadEvents);
-    };
-  }, []);
+  }, [router]);
 
   const deleteEvent = (id: number) => {
+    if (!isAdmin) {
+      alert("Only administrators can delete events.");
+      return;
+    }
+
     const confirmed = confirm(
       "Are you sure you want to delete this event?"
     );
@@ -70,13 +110,27 @@ export default function MyEvents() {
 
   const filteredEvents = events.filter((event) => {
     const searchText = search.toLowerCase();
+    const venueName = (event.venue_name || event.venue || "").toLowerCase();
 
     return (
-      event.title.toLowerCase().includes(searchText) ||
-      event.description.toLowerCase().includes(searchText) ||
-      event.venue.toLowerCase().includes(searchText)
+      event.title?.toLowerCase().includes(searchText) ||
+      event.description?.toLowerCase().includes(searchText) ||
+      venueName.includes(searchText)
     );
   });
+
+  const venueDisplay = (event: Event) =>
+    event.venue_name || event.venue || "Unknown venue";
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <p className="text-slate-600">
+          Loading events...
+        </p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 md:px-6">
@@ -96,21 +150,26 @@ export default function MyEvents() {
 
           <div>
             <h1 className="text-3xl font-bold text-slate-900">
-              My Events
+              Events
             </h1>
 
             <p className="mt-2 text-slate-600">
-              View and manage the events you have created.
+              {isAdmin
+                ? "View and manage all events."
+                : "View and register for available events."}
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => router.push("/create")}
-            className="rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700"
-          >
-            + Create Event
-          </button>
+          {/* CREATE EVENT - ADMIN ONLY */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => router.push("/create")}
+              className="rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700"
+            >
+              + Create Event
+            </button>
+          )}
 
         </div>
 
@@ -134,16 +193,21 @@ export default function MyEvents() {
             </h2>
 
             <p className="mt-2 text-slate-500">
-              You have not created any events yet.
+              {isAdmin
+                ? "You have not created any events yet."
+                : "There are no available events yet."}
             </p>
 
-            <button
-              type="button"
-              onClick={() => router.push("/create")}
-              className="mt-5 rounded-lg bg-blue-600 px-5 py-3 font-medium text-white transition hover:bg-blue-700"
-            >
-              Create Your First Event
-            </button>
+            {/* CREATE EVENT - ADMIN ONLY */}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => router.push("/create")}
+                className="mt-5 rounded-lg bg-blue-600 px-5 py-3 font-medium text-white transition hover:bg-blue-700"
+              >
+                Create Your First Event
+              </button>
+            )}
 
           </div>
         ) : filteredEvents.length === 0 ? (
@@ -204,7 +268,7 @@ export default function MyEvents() {
 
                   <p>
                     <strong>Venue:</strong>{" "}
-                    {event.venue}
+                    {venueDisplay(event)}
                   </p>
 
                   <p>
@@ -217,6 +281,7 @@ export default function MyEvents() {
                 {/* Action Buttons */}
                 <div className="mt-5 flex flex-wrap gap-3">
 
+                  {/* VIEW - EVERYONE */}
                   <button
                     type="button"
                     onClick={() =>
@@ -229,27 +294,33 @@ export default function MyEvents() {
                     View Event
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      router.push(
-                        `/events/edit/${event.id}`
-                      )
-                    }
-                    className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition hover:bg-blue-700"
-                  >
-                    Edit Event
-                  </button>
+                  {/* EDIT - ADMIN ONLY */}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        router.push(
+                          `/events/edit/${event.id}`
+                        )
+                      }
+                      className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition hover:bg-blue-700"
+                    >
+                      Edit Event
+                    </button>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      deleteEvent(event.id)
-                    }
-                    className="rounded-lg bg-red-500 px-4 py-2 font-medium text-white transition hover:bg-red-600"
-                  >
-                    Delete Event
-                  </button>
+                  {/* DELETE - ADMIN ONLY */}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        deleteEvent(event.id)
+                      }
+                      className="rounded-lg bg-red-500 px-4 py-2 font-medium text-white transition hover:bg-red-600"
+                    >
+                      Delete Event
+                    </button>
+                  )}
 
                 </div>
 

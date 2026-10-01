@@ -11,50 +11,71 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  const handleSubmit = (
-    e: React.FormEvent<HTMLFormElement>
-  ) => {
-    e.preventDefault();
+  const handleSubmit = async (
+  e: React.FormEvent<HTMLFormElement>
+) => {
+  e.preventDefault();
 
-    if (
-      !name.trim() ||
-      !email.trim() ||
-      !password.trim() ||
-      !confirmPassword.trim()
-    ) {
-      alert("Please fill in all fields.");
-      return;
-    }
+  if (
+    !name.trim() ||
+    !email.trim() ||
+    !password.trim() ||
+    !confirmPassword.trim()
+  ) {
+    alert("Please fill in all fields.");
+    return;
+  }
 
-    if (!email.includes("@")) {
-      alert("Please enter a valid email address.");
-      return;
-    }
+  if (!email.includes("@")) {
+    alert("Please enter a valid email address.");
+    return;
+  }
 
-    if (password.length < 6) {
-      alert("Password must be at least 6 characters.");
-      return;
-    }
+  if (password.length < 6) {
+    alert("Password must be at least 6 characters.");
+    return;
+  }
 
-    if (password !== confirmPassword) {
-      alert("Passwords do not match.");
-      return;
-    }
+  if (password !== confirmPassword) {
+    alert("Passwords do not match.");
+    return;
+  }
 
-    localStorage.setItem(
-      "userName",
-      name.trim()
+  try {
+    const response = await fetch(
+      "http://127.0.0.1:8000/api/auth/register",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          password: password,
+          role: "USER",
+        }),
+      }
     );
 
-    localStorage.setItem(
-      "userEmail",
-      email.trim()
-    );
+    const data = await response.json();
+
+    if (!response.ok) {
+      alert(data.detail || "Registration failed.");
+      return;
+    }
+
+    localStorage.setItem("userName", name.trim());
+    localStorage.setItem("userEmail", email.trim());
 
     alert("Account created successfully!");
 
     router.push("/");
-  };
+  } catch (error) {
+    console.error(error);
+    alert("Cannot connect to the backend.");
+  }
+};
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-8">

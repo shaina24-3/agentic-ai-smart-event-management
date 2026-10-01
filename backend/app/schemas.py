@@ -57,6 +57,8 @@ class EventOut(EventCreate):
     status: str
     created_by: int
     created_by: Optional[int] = None
+    venue: Optional[str] = None
+    venue_name: Optional[str] = None
     class Config:
         from_attributes = True
 

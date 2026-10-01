@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type FormData = {
@@ -8,8 +8,15 @@ type FormData = {
   description: string;
   date: string;
   time: string;
-  venue: string;
+  venue_id: string;
   capacity: string;
+};
+
+type Venue = {
+  id: number;
+  name: string;
+  capacity: number;
+  location: string;
 };
 
 export default function CreateEvent() {
@@ -20,9 +27,60 @@ export default function CreateEvent() {
     description: "",
     date: "",
     time: "",
-    venue: "",
+    venue_id: "",
     capacity: "",
   });
+
+  const [venues, setVenues] = useState<Venue[]>([]);
+  const [loadingVenues, setLoadingVenues] = useState(true);
+
+  // Load venues from backend
+  useEffect(() => {
+    const loadVenues = async () => {
+      setLoadingVenues(true);
+
+      try {
+        const url =
+          form.date && form.time
+            ? `http://127.0.0.1:8000/api/venues/available?date=${encodeURIComponent(form.date)}&time=${encodeURIComponent(form.time)}`
+            : "http://127.0.0.1:8000/api/venues";
+
+        const response = await fetch(url);
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          alert(
+            typeof data.detail === "string"
+              ? data.detail
+              : "Failed to load venues."
+          );
+          return;
+        }
+
+        setVenues(data);
+
+        if (
+          form.venue_id &&
+          !data.some(
+            (venue: Venue) => venue.id === Number(form.venue_id)
+          )
+        ) {
+          setForm((previousForm) => ({
+            ...previousForm,
+            venue_id: "",
+          }));
+        }
+      } catch (error) {
+        console.error(error);
+        alert("Cannot connect to the backend.");
+      } finally {
+        setLoadingVenues(false);
+      }
+    };
+
+    loadVenues();
+  }, [form.date, form.time, form.venue_id]);
 
   const updateField = (
     field: keyof FormData,
@@ -34,7 +92,7 @@ export default function CreateEvent() {
     }));
   };
 
-  const handleSubmit = (
+  const handleSubmit = async (
     e: React.FormEvent<HTMLFormElement>
   ) => {
     e.preventDefault();
@@ -44,7 +102,7 @@ export default function CreateEvent() {
       !form.description.trim() ||
       !form.date.trim() ||
       !form.time.trim() ||
-      !form.venue.trim() ||
+      !form.venue_id.trim() ||
       !form.capacity.trim()
     ) {
       alert("Please fill in all fields.");
@@ -56,35 +114,63 @@ export default function CreateEvent() {
       return;
     }
 
-    const savedEvents = localStorage.getItem("events");
+    const token = localStorage.getItem("access_token");
 
-    const existingEvents = savedEvents
-      ? JSON.parse(savedEvents)
-      : [];
+    if (!token) {
+      alert("Please login first.");
+      router.push("/");
+      return;
+    }
 
-    const newEvent = {
-      id: Date.now(),
-      title: form.title.trim(),
-      description: form.description.trim(),
-      date: form.date,
-      time: form.time,
-      venue: form.venue.trim(),
-      capacity: Number(form.capacity),
-    };
+    try {
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/events",
+        {
+          method: "POST",
 
-    const updatedEvents = [
-      ...existingEvents,
-      newEvent,
-    ];
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
 
-    localStorage.setItem(
-      "events",
-      JSON.stringify(updatedEvents)
-    );
+          body: JSON.stringify({
+            title: form.title.trim(),
+            description: form.description.trim(),
+            date: form.date,
+            time: form.time,
+            venue_id: Number(form.venue_id),
+            capacity: Number(form.capacity),
+          }),
+        }
+      );
 
-    alert("Event created successfully!");
+      const data = await response.json();
 
-    router.push("/events");
+      if (!response.ok) {
+        if (Array.isArray(data.detail)) {
+          const messages = data.detail
+            .map((error: any) => {
+              return error.msg || "Validation error";
+            })
+            .join("\n");
+
+          alert(messages);
+        } else {
+          alert(
+            data.detail || "Failed to create event."
+          );
+        }
+
+        return;
+      }
+
+      alert("Event created successfully!");
+
+      router.push("/events");
+    } catch (error) {
+      console.error(error);
+      alert("Cannot connect to the backend.");
+    }
   };
 
   return (
@@ -214,16 +300,39 @@ export default function CreateEvent() {
               Venue
             </label>
 
-            <input
+            <select
               id="venue"
-              type="text"
-              placeholder="Enter venue"
-              value={form.venue}
+              value={form.venue_id}
               onChange={(e) =>
-                updateField("venue", e.target.value)
+                updateField(
+                  "venue_id",
+                  e.target.value
+                )
               }
-              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-            />
+              disabled={loadingVenues}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            >
+              <option value="">
+                {loadingVenues
+                  ? "Loading venues..."
+                  : "Select a venue"}
+              </option>
+
+              {venues.map((venue) => (
+                <option
+                  key={venue.id}
+                  value={venue.id}
+                >
+                  {venue.name} - {venue.location}
+                </option>
+              ))}
+            </select>
+
+            {!loadingVenues && venues.length === 0 && (
+              <p className="mt-2 text-sm text-red-500">
+                No venues available.
+              </p>
+            )}
           </div>
 
           {/* Capacity */}
@@ -257,7 +366,9 @@ export default function CreateEvent() {
             {/* Cancel */}
             <button
               type="button"
-              onClick={() => router.push("/dashboard")}
+              onClick={() =>
+                router.push("/dashboard")
+              }
               className="w-1/2 rounded-lg border border-slate-300 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
             >
               Cancel
@@ -266,7 +377,8 @@ export default function CreateEvent() {
             {/* Create Event */}
             <button
               type="submit"
-              className="w-1/2 rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700"
+              disabled={loadingVenues}
+              className="w-1/2 rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Create Event
             </button>
