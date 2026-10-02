@@ -203,3 +203,6 @@ uvicorn app.main:app --host 0.0.0.0 --port 10000
 This project is licensed under the MIT License. Available for academic, demonstration, and production extension purposes.
 
 ---
+Live Demo
+---
+Backend Link -> https://agentic-ai-smart-event-management-2.onrender.com/docs
