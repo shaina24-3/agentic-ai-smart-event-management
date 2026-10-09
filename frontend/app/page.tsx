@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { API_BASE_URL } from "@/lib/api";
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const emailValidationMessage = "Please enter a valid email address format (e.g., xyz@gmail.com)";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -9,33 +13,46 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [forgotPasswordError, setForgotPasswordError] = useState("");
+
+  const validateEmail = (value: string) => {
+    if (!value.trim() || !emailRegex.test(value.trim())) {
+      return false;
+    }
+    return true;
+  };
 
   const handleLogin = async (
     e: React.FormEvent<HTMLFormElement>
   ) => {
     e.preventDefault();
 
-    if (!email.trim() || !password.trim()) {
-      alert("Please enter your email and password.");
+    const isEmailValid = validateEmail(email);
+    if (!isEmailValid) {
+      setEmailError(emailValidationMessage);
       return;
     }
+    setEmailError("");
 
-    if (!email.includes("@")) {
-      alert("Please enter a valid email address.");
+    if (!password.trim()) {
+      setPasswordError("Please enter your password.");
       return;
     }
+    setPasswordError("");
 
     try {
-      // Clear previous session BEFORE login
       localStorage.removeItem("access_token");
       localStorage.removeItem("userName");
       localStorage.removeItem("userEmail");
       localStorage.removeItem("userRole");
       localStorage.removeItem("rememberMe");
 
-      // Login
       const response = await fetch(
-        "http://127.0.0.1:8000/api/auth/login",
+        `${API_BASE_URL}/api/auth/login`,
         {
           method: "POST",
           headers: {
@@ -64,12 +81,10 @@ export default function LoginPage() {
         return;
       }
 
-      // Store ONLY the new token
       localStorage.setItem("access_token", token);
 
-      // Ask backend who actually logged in
       const userResponse = await fetch(
-        "http://127.0.0.1:8000/api/auth/me",
+        `${API_BASE_URL}/api/auth/me`,
         {
           method: "GET",
           headers: {
@@ -88,24 +103,9 @@ export default function LoginPage() {
 
       const userData = await userResponse.json();
 
-      console.log("LOGIN USER:", userData);
-      console.log("LOGIN ROLE:", userData.role);
-
-      // Store actual backend user information
-      localStorage.setItem(
-        "userEmail",
-        userData.email || email.trim()
-      );
-
-      localStorage.setItem(
-        "userName",
-        userData.name || email.trim()
-      );
-
-      localStorage.setItem(
-        "userRole",
-        String(userData.role || "").toUpperCase()
-      );
+      localStorage.setItem("userEmail", userData.email || email.trim());
+      localStorage.setItem("userName", userData.name || email.trim());
+      localStorage.setItem("userRole", String(userData.role || "").toUpperCase());
 
       if (rememberMe) {
         localStorage.setItem("rememberMe", "true");
@@ -113,7 +113,7 @@ export default function LoginPage() {
 
       alert("Login successful!");
 
-      router.push("/dashboard");
+      router.push(String(userData.role || "").toUpperCase() === "ADMIN" ? "/admin" : "/dashboard");
     } catch (error) {
       console.error(error);
       alert("Cannot connect to the backend.");
@@ -121,9 +121,19 @@ export default function LoginPage() {
   };
 
   const handleForgotPassword = () => {
-    alert(
-      "Password reset will be connected to the API later."
-    );
+    setShowForgotPassword((prev) => !prev);
+    setForgotPasswordError("");
+    setForgotPasswordEmail("");
+  };
+
+  const handleForgotPasswordSubmit = () => {
+    if (!forgotPasswordEmail.trim() || !emailRegex.test(forgotPasswordEmail.trim())) {
+      setForgotPasswordError(emailValidationMessage);
+      return;
+    }
+
+    setForgotPasswordError("");
+    setShowForgotPassword(false);
   };
 
   return (
@@ -143,7 +153,6 @@ export default function LoginPage() {
           className="mt-8 space-y-5"
         >
 
-          {/* Email */}
           <div>
             <label
               htmlFor="email"
@@ -156,13 +165,19 @@ export default function LoginPage() {
               id="email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setEmail(value);
+                setEmailError(value && !emailRegex.test(value.trim()) ? emailValidationMessage : "");
+              }}
               placeholder="Enter your email"
               className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
             />
+            {emailError ? (
+              <p className="mt-1 text-sm text-red-600">{emailError}</p>
+            ) : null}
           </div>
 
-          {/* Password */}
           <div>
             <label
               htmlFor="password"
@@ -179,18 +194,17 @@ export default function LoginPage() {
               placeholder="Enter your password"
               className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
             />
+            {passwordError ? (
+              <p className="mt-1 text-sm text-red-600">{passwordError}</p>
+            ) : null}
           </div>
 
-          {/* Remember Me */}
           <div className="flex items-center justify-between">
-
             <label className="flex items-center gap-2 text-sm text-slate-600">
               <input
                 type="checkbox"
                 checked={rememberMe}
-                onChange={(e) =>
-                  setRememberMe(e.target.checked)
-                }
+                onChange={(e) => setRememberMe(e.target.checked)}
                 className="h-4 w-4"
               />
 
@@ -204,10 +218,34 @@ export default function LoginPage() {
             >
               Forgot Password?
             </button>
-
           </div>
 
-          {/* Login Button */}
+          {showForgotPassword ? (
+            <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <input
+                type="email"
+                value={forgotPasswordEmail}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setForgotPasswordEmail(value);
+                  setForgotPasswordError(value && !emailRegex.test(value.trim()) ? emailValidationMessage : "");
+                }}
+                placeholder="Please enter your email to recover your password (e.g., xyz@gmail.com)"
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              />
+              {forgotPasswordError ? (
+                <p className="text-sm text-red-600">{forgotPasswordError}</p>
+              ) : null}
+              <button
+                type="button"
+                onClick={handleForgotPasswordSubmit}
+                className="w-full rounded-lg bg-slate-200 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-300"
+              >
+                Recover Password
+              </button>
+            </div>
+          ) : null}
+
           <button
             type="submit"
             className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700"
@@ -217,7 +255,6 @@ export default function LoginPage() {
 
         </form>
 
-        {/* Register */}
         <p className="mt-6 text-center text-sm text-slate-600">
           Don't have an account?{" "}
 

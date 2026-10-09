@@ -17,6 +17,7 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
+  const [updatingRoleId, setUpdatingRoleId] = useState<number | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -68,6 +69,47 @@ export default function AdminUsersPage() {
       await loadUsers();
     } catch (err) {
       setMessage("Failed to delete user.");
+    }
+  };
+
+  const handleRoleChange = async (user: UserItem, role: "USER" | "ADMIN") => {
+    if (user.role === role) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      router.push("/");
+      return;
+    }
+    if (user.email === localStorage.getItem("userEmail")) {
+      setMessage("You cannot change your own administrator role.");
+      return;
+    }
+    if (!confirm(`Change ${user.name}'s role to ${role === "ADMIN" ? "Admin" : "User"}?`)) {
+      return;
+    }
+
+    setUpdatingRoleId(user.id);
+    setMessage("");
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/admin/users/${user.id}/role`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ role }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setMessage(result.detail || "Could not update user role.");
+        return;
+      }
+
+      setMessage(`Updated ${user.name}'s role to ${role === "ADMIN" ? "Admin" : "User"}.`);
+      await loadUsers();
+    } catch {
+      setMessage("Could not connect to the backend.");
+    } finally {
+      setUpdatingRoleId(null);
     }
   };
 
@@ -131,15 +173,18 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="py-3 px-4 text-slate-600">{u.email}</td>
                     <td className="py-3 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
-                          u.role === "ADMIN"
-                            ? "bg-purple-100 text-purple-700"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
+                      <select
+                        aria-label={`Role for ${u.name}`}
+                        value={u.role}
+                        onChange={(event) => void handleRoleChange(u, event.target.value as "USER" | "ADMIN")}
+                        disabled={updatingRoleId === u.id}
+                        className={`rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold ${
+                          u.role === "ADMIN" ? "text-purple-700" : "text-slate-700"
+                        } disabled:opacity-60`}
                       >
-                        {u.role}
-                      </span>
+                        <option value="USER">USER</option>
+                        <option value="ADMIN">ADMIN</option>
+                      </select>
                     </td>
                     <td className="py-3 px-4 text-slate-400">{u.created_at ? u.created_at.slice(0, 10) : "Active"}</td>
                     <td className="py-3 px-4 text-right">

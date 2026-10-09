@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatTime } from "../../lib/formatTime";
 
 type Event = {
   id: number;
@@ -29,14 +30,10 @@ export default function Dashboard() {
   const [message, setMessage] = useState("");
 
   const [userEmail, setUserEmail] = useState("");
-  const [userRole, setUserRole] = useState("");
+  const [userName, setUserName] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
-
-  const loadDashboard = async () => {
+  const loadDashboard = useEffectEvent(async () => {
     const token = localStorage.getItem("access_token");
 
     if (!token) {
@@ -76,7 +73,7 @@ export default function Dashboard() {
       const role = String(userData.role || "").toUpperCase();
 
       setUserEmail(userData.email || "");
-      setUserRole(role);
+      setUserName(userData.name || "");
       setIsAdmin(role === "ADMIN");
 
       // Load events
@@ -115,7 +112,13 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  });
+
+  useEffect(() => {
+    // The loader updates dashboard state after external requests complete.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadDashboard();
+  }, []);
 
   const handleRegister = async (eventId: number) => {
     const token = localStorage.getItem("access_token");
@@ -147,9 +150,44 @@ export default function Dashboard() {
         return;
       }
 
+      setRegistrations((previous) => {
+        if (previous.some(
+          (registration) =>
+            registration.event_id === eventId &&
+            registration.status === "CONFIRMED"
+        )) {
+          return previous;
+        }
+
+        return [
+          ...previous,
+          {
+            id: Date.now(),
+            event_id: eventId,
+            status: "CONFIRMED",
+          },
+        ];
+      });
       setMessage("Successfully registered for the event!");
 
-      await loadDashboard();
+      try {
+        const registrationResponse = await fetch(
+          "http://127.0.0.1:8000/api/registrations/me",
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            cache: "no-store",
+          }
+        );
+
+        if (registrationResponse.ok) {
+          setRegistrations(await registrationResponse.json());
+        }
+      } catch (refreshError) {
+        console.error("Registration succeeded, but registrations could not be refreshed.", refreshError);
+      }
     } catch (error) {
       console.error(error);
       setMessage("Cannot connect to the backend.");
@@ -186,9 +224,33 @@ export default function Dashboard() {
         return;
       }
 
+      setRegistrations((previous) =>
+        previous.map((registration) =>
+          registration.event_id === eventId && registration.status === "CONFIRMED"
+            ? { ...registration, status: "CANCELLED" }
+            : registration
+        )
+      );
       setMessage("Registration cancelled successfully!");
 
-      await loadDashboard();
+      try {
+        const registrationResponse = await fetch(
+          "http://127.0.0.1:8000/api/registrations/me",
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            cache: "no-store",
+          }
+        );
+
+        if (registrationResponse.ok) {
+          setRegistrations(await registrationResponse.json());
+        }
+      } catch (refreshError) {
+        console.error("Cancellation succeeded, but registrations could not be refreshed.", refreshError);
+      }
     } catch (error) {
       console.error(error);
       setMessage("Cannot connect to the backend.");
@@ -218,23 +280,33 @@ export default function Dashboard() {
     <main className="min-h-screen bg-slate-100 px-4 py-8 md:px-6">
       <div className="mx-auto max-w-7xl">
 
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">
-            Welcome to your dashboard
-          </h1>
-
-          <p className="mt-2 text-slate-600">
-            {userEmail
-              ? `Logged in as ${userEmail}`
-              : "Manage your events easily from one place."}
-          </p>
-
-          {/* Temporary role display for testing */}
-          <p className="mt-1 text-sm text-slate-500">
-            Role: {userRole || "Loading..."}
-          </p>
-        </div>
+        <section
+          style={{ backgroundColor: "#6d28d9" }}
+          className="flex flex-col gap-6 rounded-2xl bg-purple-700 px-6 py-8 text-white shadow-sm sm:flex-row sm:items-center sm:justify-between md:px-8"
+        >
+          <div>
+            {isAdmin && (
+              <p className="text-sm font-medium text-slate-300">Administration</p>
+            )}
+            <h1 className="mt-2 text-2xl font-semibold md:text-3xl">
+              {isAdmin
+                ? "Admin Control Panel"
+                : `Welcome, ${userName || (userEmail ? userEmail.split("@")[0] : "User")}`}
+            </h1>
+            <p className="mt-2 text-sm text-slate-300">
+              {isAdmin
+                ? "Manage events, registrations, and attendees."
+                : "Manage your events and registrations in one place."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push("/ai-assistant")}
+            className="w-fit rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500"
+          >
+            Open Your AI Agent
+          </button>
+        </section>
 
         {/* Message */}
         {message && (
@@ -255,13 +327,13 @@ export default function Dashboard() {
             {/* Dashboard Cards */}
             <div className="mt-8 grid gap-6 md:grid-cols-3">
 
-              {/* Available Events */}
+              {/* Total Events */}
               <button
                 onClick={() => router.push("/events")}
                 className="rounded-xl bg-white p-6 text-left shadow transition hover:shadow-lg"
               >
                 <h2 className="text-xl font-semibold text-slate-900">
-                  Available Events
+                  Total Events
                 </h2>
 
                 <p className="mt-4 text-4xl font-bold text-blue-600">
@@ -317,31 +389,6 @@ export default function Dashboard() {
                 </button>
               )}
 
-              {/* User-only card */}
-              {!isAdmin && (
-                <button
-                  onClick={() =>
-                    document
-                      .getElementById("upcoming-events")
-                      ?.scrollIntoView({
-                        behavior: "smooth",
-                      })
-                  }
-                  className="rounded-xl bg-white p-6 text-left shadow transition hover:shadow-lg"
-                >
-                  <h2 className="text-xl font-semibold text-slate-900">
-                    Upcoming Events
-                  </h2>
-
-                  <p className="mt-4 text-4xl font-bold text-blue-600">
-                    →
-                  </p>
-
-                  <p className="mt-2 text-slate-500">
-                    Browse and register for upcoming events.
-                  </p>
-                </button>
-              )}
             </div>
 
             {/* Upcoming Events */}
@@ -378,32 +425,30 @@ export default function Dashboard() {
 
                         <p className="mt-2 text-sm text-slate-500">
                           {event.date}
-                          {event.time ? ` • ${event.time}` : ""}
+                          {event.time ? ` • ${formatTime(event.time)}` : ""}
                         </p>
 
                         <p className="mt-1 text-sm text-slate-500">
                           Capacity: {event.capacity}
                         </p>
 
-                        {!isAdmin && (
-                          <div className="mt-4">
-                            {registered ? (
-                              <button
-                                onClick={() => handleCancel(event.id)}
-                                className="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
-                              >
-                                Cancel Registration
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleRegister(event.id)}
-                                className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                              >
-                                Register
-                              </button>
-                            )}
-                          </div>
-                        )}
+                        <div className="mt-4">
+                          {registered ? (
+                            <button
+                              onClick={() => handleCancel(event.id)}
+                              className="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                            >
+                              Cancel Registration
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleRegister(event.id)}
+                              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                            >
+                              Register
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -448,7 +493,7 @@ export default function Dashboard() {
                               <p className="mt-1 text-sm text-slate-500">
                                 {event.date}
                                 {event.time
-                                  ? ` • ${event.time}`
+                                  ? ` • ${formatTime(event.time)}`
                                   : ""}
                               </p>
                             )}

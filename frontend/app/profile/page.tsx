@@ -8,13 +8,31 @@ export default function Profile() {
 
   const [name, setName] = useState("User");
   const [email, setEmail] = useState("user@example.com");
+  const [role, setRole] = useState("USER");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
 
   useEffect(() => {
     const savedName = localStorage.getItem("userName");
     const savedEmail = localStorage.getItem("userEmail");
+    const token = localStorage.getItem("access_token");
 
     setName(savedName || "User");
     setEmail(savedEmail || "user@example.com");
+
+    if (token) {
+      fetch("http://127.0.0.1:8000/api/auth/me", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((user) => {
+          if (user) setRole(String(user.role || "USER").toUpperCase());
+        })
+        .catch(() => {});
+    }
   }, []);
 
   const handleSave = () => {
@@ -51,6 +69,54 @@ export default function Profile() {
 
     // Return to login
     router.push("/");
+  };
+
+  const handlePasswordUpdate = async () => {
+    setPasswordMessage("");
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      setPasswordMessage("Complete all three password fields.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordMessage("New password and confirmation do not match.");
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordMessage("New password must be at least 8 characters.");
+      return;
+    }
+
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      router.push("/");
+      return;
+    }
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/auth/change-password", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setPasswordMessage(result.detail || "Could not update password.");
+        return;
+      }
+
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setPasswordMessage("Password updated successfully.");
+    } catch {
+      setPasswordMessage("Could not connect to the backend.");
+    }
   };
 
   const firstLetter = name.trim()
@@ -97,7 +163,7 @@ export default function Profile() {
               </h2>
 
               <p className="mt-1 text-slate-500">
-                Smart Event Management User
+                {role === "ADMIN" ? "Administrator" : "User"}
               </p>
 
             </div>
@@ -156,20 +222,12 @@ export default function Profile() {
             {/* Role */}
             <div>
 
-              <label
-                htmlFor="role"
-                className="mb-2 block text-sm font-medium text-slate-700"
-              >
+              <span className="mb-2 block text-sm font-medium text-slate-700">
                 Role
-              </label>
-
-              <input
-                id="role"
-                type="text"
-                value="User"
-                disabled
-                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-3 text-slate-500"
-              />
+              </span>
+              <p id="role" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700">
+                {role === "ADMIN" ? "Admin" : "User"}
+              </p>
 
             </div>
 
@@ -194,6 +252,63 @@ export default function Profile() {
           </div>
 
         </div>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 shadow-lg">
+          <h2 className="text-xl font-semibold text-slate-900">Change Password</h2>
+          <div className="mt-5 grid gap-5">
+            <div>
+              <label htmlFor="current-password" className="mb-2 block text-sm font-medium text-slate-700">
+                Current Password
+              </label>
+              <input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              />
+            </div>
+            <div>
+              <label htmlFor="new-password" className="mb-2 block text-sm font-medium text-slate-700">
+                New Password
+              </label>
+              <input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              />
+            </div>
+            <div>
+              <label htmlFor="confirm-new-password" className="mb-2 block text-sm font-medium text-slate-700">
+                Confirm New Password
+              </label>
+              <input
+                id="confirm-new-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmNewPassword}
+                onChange={(event) => setConfirmNewPassword(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              />
+            </div>
+            {passwordMessage && (
+              <p role="status" className="text-sm text-slate-700">
+                {passwordMessage}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => void handlePasswordUpdate()}
+              className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700"
+            >
+              Update Password
+            </button>
+          </div>
+        </section>
 
       </div>
 

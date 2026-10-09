@@ -98,7 +98,7 @@ DATABASE_URL=sqlite:///./event_system.db
 JWT_SECRET=your_super_secret_jwt_key_here
 
 # Server Settings
-PORT=10000
+PORT=8000
 
 ```
 
@@ -112,12 +112,15 @@ PORT=10000
 git clone <your-repository-url>
 cd <repository-directory>
 
+# From the repository root, enter the backend directory first:
+cd backend
+
 # Create virtual environment
 python -m venv venv
 
 # Activate virtual environment
 # Windows:
-venv\Scripts\activate
+venv\Scripts\Activate.ps1
 # macOS/Linux:
 source venv/bin/activate
 
@@ -128,12 +131,15 @@ pip install -r requirements.txt
 
 ### 2. Run the Application
 
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 10000 --reload
+On Windows, start the backend from the repository's `backend` directory with:
 
+```powershell
+.\run_backend.bat
 ```
 
-The API will be accessible at `[http://127.0.0.1:10000](http://127.0.0.1:10000)`. Interactive OpenAPI documentation is available at `[http://127.0.0.1:10000/docs](http://127.0.0.1:10000/docs)`.
+This launcher changes to the `backend` directory and starts Uvicorn with the complete ASGI target `app.main:app`. If starting Uvicorn manually, run it from the `backend` directory and use `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload`; `app.main:` is incomplete and prevents Uvicorn from loading the application.
+
+The API will be accessible at `[http://127.0.0.1:8000](http://127.0.0.1:8000)`, matching the frontend's default API URL. Interactive OpenAPI documentation is available at `[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)`.
 
 ---
 

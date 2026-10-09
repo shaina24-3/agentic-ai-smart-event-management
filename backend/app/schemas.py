@@ -1,5 +1,5 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, List, Literal
 from datetime import datetime
 
 class UserCreate(BaseModel):
@@ -19,6 +19,13 @@ class UserOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+class UserRoleUpdate(BaseModel):
+    role: Literal["USER", "ADMIN"]
 
 class VenueCreate(BaseModel):
     name: str

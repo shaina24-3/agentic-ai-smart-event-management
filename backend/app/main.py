@@ -9,6 +9,7 @@ from .models import User, Venue, Event, Registration, AgentRun
 from .models import User, Venue, Event, Registration, AgentRun, ToolCall, AuditLog, AgentSession
 from .schemas import (
     UserCreate, UserOut, Token,
+    PasswordChange, UserRoleUpdate,
     VenueCreate, VenueOut,
     EventCreate, EventOut,
     RegistrationOut,
@@ -125,6 +126,9 @@ def login(payload: UserCreate, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user.password_hash.startswith(("$2a$", "$2b$", "$2y$")):
+        user.password_hash = hash_password(payload.password)
+        db.commit()
     token = create_access_token({"sub": user.email, "role": user.role})
 
     # Audit log
@@ -137,6 +141,29 @@ def login(payload: UserCreate, db: Session = Depends(get_db)):
 @app.get("/api/auth/me", response_model=UserOut)
 def get_me(user: User = Depends(get_current_user)):
     return user
+
+
+@app.put("/api/auth/change-password")
+def change_password(
+    payload: PasswordChange,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=400, detail="New password must be different from the current password.")
+
+    user.password_hash = hash_password(payload.new_password)
+    db.add(AuditLog(
+        user_id=user.id,
+        action="CHANGE_PASSWORD",
+        resource_type="users",
+        resource_id=user.id,
+        details="User changed their password",
+    ))
+    db.commit()
+    return {"message": "Password updated successfully."}
 
 # Venue Endpoints
 # ============================================================================
@@ -322,6 +349,30 @@ def get_event_registrations(event_id: int, db: Session = Depends(get_db), admin:
 def get_user_registrations(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     return db.query(Registration).filter(Registration.user_id == user.id).all()
 
+
+@app.get("/api/user/registrations")
+def get_current_user_registration_records(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    registrations = (
+        db.query(Registration)
+        .join(Event, Registration.event_id == Event.id)
+        .filter(Registration.user_id == user.id)
+        .order_by(Registration.registered_at.desc(), Registration.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": registration.id,
+            "event_id": registration.event_id,
+            "event_title": registration.event.title,
+            "registration_date": registration.registered_at.isoformat() if registration.registered_at else None,
+            "status": registration.status,
+        }
+        for registration in registrations
+    ]
+
 # Agent Chat Endpoint
 # ============================================================================
 # 5. Agent Chat Endpoint
@@ -347,6 +398,137 @@ def get_audit_logs(db: Session = Depends(get_db), admin: User = Depends(require_
 def get_all_users(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     users = db.query(User).all()
     return [{"id": u.id, "name": u.name, "email": u.email, "role": u.role, "created_at": str(u.created_at)} for u in users]
+
+
+@app.put("/api/admin/users/{user_id}/role")
+def update_user_role(
+    user_id: int,
+    payload: UserRoleUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target_user.id == admin.id and payload.role != admin.role:
+        raise HTTPException(status_code=400, detail="You cannot change your own administrator role.")
+    if target_user.role == payload.role:
+        return {"id": target_user.id, "name": target_user.name, "email": target_user.email, "role": target_user.role}
+
+    previous_role = target_user.role
+    target_user.role = payload.role
+    db.add(AuditLog(
+        user_id=admin.id,
+        action="UPDATE_USER_ROLE",
+        resource_type="users",
+        resource_id=target_user.id,
+        details=f"Role changed from {previous_role} to {payload.role}",
+    ))
+    db.commit()
+    return {"id": target_user.id, "name": target_user.name, "email": target_user.email, "role": target_user.role}
+
+
+@app.get("/api/admin/registrations")
+def get_all_registrations(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    registrations = (
+        db.query(Registration)
+        .options(joinedload(Registration.user), joinedload(Registration.event))
+        .order_by(Registration.registered_at.desc(), Registration.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": registration.id,
+            "user_email": registration.user.email,
+            "event_title": registration.event.title,
+            "registration_date": registration.registered_at.isoformat() if registration.registered_at else None,
+            "status": registration.status,
+        }
+        for registration in registrations
+    ]
+
+
+def update_admin_registration_status(
+    registration_id: int,
+    target_status: str,
+    db: Session,
+    admin: User,
+):
+    registration = (
+        db.query(Registration)
+        .filter(Registration.id == registration_id)
+        .with_for_update()
+        .first()
+    )
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+
+    if registration.status == target_status:
+        confirmed_count = db.query(Registration).filter(
+            Registration.event_id == registration.event_id,
+            Registration.status == "CONFIRMED",
+        ).count()
+        return {
+            "id": registration.id,
+            "user_email": registration.user.email,
+            "event_title": registration.event.title,
+            "registration_date": registration.registered_at.isoformat() if registration.registered_at else None,
+            "status": registration.status,
+            "available_seats": max(registration.event.capacity - confirmed_count, 0),
+        }
+
+    if target_status == "CONFIRMED":
+        confirmed_count = db.query(Registration).filter(
+            Registration.event_id == registration.event_id,
+            Registration.status == "CONFIRMED",
+        ).count()
+        if confirmed_count >= registration.event.capacity:
+            raise HTTPException(status_code=409, detail="The event has no available seats")
+        action = "RESTORE_REGISTRATION"
+    else:
+        action = "CANCEL_REGISTRATION"
+
+    previous_status = registration.status
+    registration.status = target_status
+    db.add(AuditLog(
+        user_id=admin.id,
+        action=action,
+        resource_type="registrations",
+        resource_id=registration.id,
+        details=f"Registration status changed from {previous_status} to {target_status}",
+    ))
+    db.commit()
+
+    confirmed_count = db.query(Registration).filter(
+        Registration.event_id == registration.event_id,
+        Registration.status == "CONFIRMED",
+    ).count()
+    return {
+        "id": registration.id,
+        "user_email": registration.user.email,
+        "event_title": registration.event.title,
+        "registration_date": registration.registered_at.isoformat() if registration.registered_at else None,
+        "status": registration.status,
+        "available_seats": max(registration.event.capacity - confirmed_count, 0),
+    }
+
+
+@app.put("/api/admin/registrations/{registration_id}/cancel")
+def cancel_admin_registration(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    return update_admin_registration_status(registration_id, "CANCELLED", db, admin)
+
+
+@app.put("/api/admin/registrations/{registration_id}/restore")
+def restore_admin_registration(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    return update_admin_registration_status(registration_id, "CONFIRMED", db, admin)
 
 @app.delete("/api/admin/users/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):

@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { API_BASE_URL } from "@/lib/api";
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+const emailValidationMessage = "Please enter a valid email address format (e.g., xyz@gmail.com)";
+const passwordValidationMessage = "Password must be at least 8 characters long and include an uppercase letter, a lowercase letter, a number, and a special character.";
 
 export default function Register() {
   const router = useRouter();
@@ -10,81 +16,86 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [confirmPasswordError, setConfirmPasswordError] = useState("");
+
+  const validateEmail = (value: string) => emailRegex.test(value.trim());
 
   const handleSubmit = async (
-  e: React.FormEvent<HTMLFormElement>
-) => {
-  e.preventDefault();
+    e: React.FormEvent<HTMLFormElement>
+  ) => {
+    e.preventDefault();
 
-  if (
-    !name.trim() ||
-    !email.trim() ||
-    !password.trim() ||
-    !confirmPassword.trim()
-  ) {
-    alert("Please fill in all fields.");
-    return;
-  }
-
-  if (!email.includes("@")) {
-    alert("Please enter a valid email address.");
-    return;
-  }
-
-  if (password.length < 6) {
-    alert("Password must be at least 6 characters.");
-    return;
-  }
-
-  if (password !== confirmPassword) {
-    alert("Passwords do not match.");
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      "http://127.0.0.1:8000/api/auth/register",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
-          password: password,
-          role: "USER",
-        }),
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      alert(data.detail || "Registration failed.");
+    if (!name.trim()) {
+      alert("Please fill in your full name.");
       return;
     }
 
-    localStorage.setItem("userName", name.trim());
-    localStorage.setItem("userEmail", email.trim());
+    if (!validateEmail(email)) {
+      setEmailError(emailValidationMessage);
+      return;
+    }
+    setEmailError("");
 
-    alert("Account created successfully!");
+    if (!passwordRegex.test(password)) {
+      setPasswordError(passwordValidationMessage);
+      return;
+    }
+    setPasswordError("");
 
-    router.push("/");
-  } catch (error) {
-    console.error(error);
-    alert("Cannot connect to the backend.");
-  }
-};
+    if (!confirmPassword.trim()) {
+      setConfirmPasswordError("Please confirm your password.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setConfirmPasswordError("Passwords do not match.");
+      return;
+    }
+    setConfirmPasswordError("");
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/auth/register`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: name.trim(),
+            email: email.trim(),
+            password: password,
+            role: "USER",
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.detail || "Registration failed.");
+        return;
+      }
+
+      localStorage.setItem("userName", name.trim());
+      localStorage.setItem("userEmail", email.trim());
+
+      alert("Account created successfully!");
+
+      router.push("/");
+    } catch (error) {
+      console.error(error);
+      alert("Cannot connect to the backend.");
+    }
+  };
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-8">
       <div className="w-full max-w-lg">
 
-        {/* Registration Card */}
         <div className="rounded-2xl bg-white p-8 shadow-xl">
 
-          {/* Heading */}
           <h1 className="text-3xl font-bold text-slate-900">
             Create Account
           </h1>
@@ -93,13 +104,11 @@ export default function Register() {
             Register for Smart Event Management.
           </p>
 
-          {/* Registration Form */}
           <form
             onSubmit={handleSubmit}
             className="mt-6 space-y-5"
           >
 
-            {/* Full Name */}
             <div>
               <label
                 htmlFor="name"
@@ -112,15 +121,12 @@ export default function Register() {
                 id="name"
                 type="text"
                 value={name}
-                onChange={(e) =>
-                  setName(e.target.value)
-                }
+                onChange={(e) => setName(e.target.value)}
                 placeholder="Enter your full name"
                 className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
             </div>
 
-            {/* Email */}
             <div>
               <label
                 htmlFor="email"
@@ -133,15 +139,19 @@ export default function Register() {
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) =>
-                  setEmail(e.target.value)
-                }
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setEmail(value);
+                  setEmailError(value && !validateEmail(value) ? emailValidationMessage : "");
+                }}
                 placeholder="Enter your email"
                 className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
+              {emailError ? (
+                <p className="mt-1 text-sm text-red-600">{emailError}</p>
+              ) : null}
             </div>
 
-            {/* Password */}
             <div>
               <label
                 htmlFor="password"
@@ -154,15 +164,19 @@ export default function Register() {
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) =>
-                  setPassword(e.target.value)
-                }
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setPassword(value);
+                  setPasswordError(value && !passwordRegex.test(value) ? passwordValidationMessage : "");
+                }}
                 placeholder="Enter your password"
                 className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
+              {passwordError ? (
+                <p className="mt-1 text-sm text-red-600">{passwordError}</p>
+              ) : null}
             </div>
 
-            {/* Confirm Password */}
             <div>
               <label
                 htmlFor="confirmPassword"
@@ -175,15 +189,19 @@ export default function Register() {
                 id="confirmPassword"
                 type="password"
                 value={confirmPassword}
-                onChange={(e) =>
-                  setConfirmPassword(e.target.value)
-                }
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setConfirmPassword(value);
+                  setConfirmPasswordError(value && password !== value ? "Passwords do not match." : "");
+                }}
                 placeholder="Confirm your password"
                 className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
+              {confirmPasswordError ? (
+                <p className="mt-1 text-sm text-red-600">{confirmPasswordError}</p>
+              ) : null}
             </div>
 
-            {/* Create Account */}
             <button
               type="submit"
               className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700"
@@ -193,7 +211,6 @@ export default function Register() {
 
           </form>
 
-          {/* Login Link */}
           <button
             type="button"
             onClick={() => router.push("/")}

@@ -5,6 +5,84 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+type NavigationIconName =
+  | "dashboard"
+  | "events"
+  | "create"
+  | "users"
+  | "venues"
+  | "agent"
+  | "profile";
+
+function NavigationIcon({ name }: { name: NavigationIconName }) {
+  const commonProps = {
+    className: "h-5 w-5 shrink-0",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+
+  switch (name) {
+    case "dashboard":
+      return (
+        <svg {...commonProps}>
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
+        </svg>
+      );
+    case "events":
+      return (
+        <svg {...commonProps}>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M16 3v4M8 3v4M3 11h18M8 15h3M8 18h7" />
+        </svg>
+      );
+    case "create":
+      return (
+        <svg {...commonProps}>
+          <rect x="3" y="3" width="18" height="18" rx="3" />
+          <path d="M12 8v8M8 12h8" />
+        </svg>
+      );
+    case "users":
+      return (
+        <svg {...commonProps}>
+          <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="10" cy="7" r="4" />
+          <path d="M20 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      );
+    case "venues":
+      return (
+        <svg {...commonProps}>
+          <path d="M3 21h18M5 21V5l7-3 7 3v16M9 9h1M14 9h1M9 13h1M14 13h1M10 21v-4h4v4" />
+        </svg>
+      );
+    case "agent":
+      return (
+        <svg {...commonProps}>
+          <circle cx="6" cy="6" r="2.5" />
+          <circle cx="18" cy="6" r="2.5" />
+          <circle cx="12" cy="18" r="2.5" />
+          <path d="M8.5 6h7M7.5 8l3 7.5M16.5 8l-3 7.5" />
+        </svg>
+      );
+    case "profile":
+      return (
+        <svg {...commonProps}>
+          <circle cx="12" cy="8" r="4" />
+          <path d="M5 21v-1a7 7 0 0 1 14 0v1" />
+        </svg>
+      );
+  }
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -60,6 +138,7 @@ export default function RootLayout({
   const publicPages = ["/", "/register"];
   const isPublicPage = publicPages.includes(pathname);
   const isAdmin = userRole === "ADMIN";
+  const dashboardPath = isAdmin ? "/admin" : "/dashboard";
 
   if (isPublicPage) {
     return (
@@ -68,13 +147,6 @@ export default function RootLayout({
       </html>
     );
   }
-
-  const currentDate = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
 
   return (
     <html lang="en">
@@ -86,7 +158,7 @@ export default function RootLayout({
           <aside className="w-64 border-r border-slate-200 bg-white flex flex-col justify-between p-4 sticky top-0 h-screen select-none shrink-0 shadow-sm">
             <div>
               {/* App Brand / Logo */}
-              <Link href="/dashboard" className="flex items-center gap-3 px-2 py-3 mb-6">
+              <Link href={dashboardPath} className="flex items-center gap-3 px-2 py-3 mb-6">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-md font-bold text-xl">
                   📅
                 </div>
@@ -100,14 +172,14 @@ export default function RootLayout({
               <nav className="space-y-1 text-sm font-medium">
                 {/* 1. Dashboard */}
                 <Link
-                  href="/dashboard"
+                  href={dashboardPath}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition ${
-                    pathname === "/dashboard"
+                    pathname === dashboardPath
                       ? "bg-indigo-50 text-indigo-700 font-semibold shadow-xs"
                       : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   }`}
                 >
-                  <span className="text-lg">📊</span>
+                  <NavigationIcon name="dashboard" />
                   <span>Dashboard</span>
                 </Link>
 
@@ -120,26 +192,77 @@ export default function RootLayout({
                       : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   }`}
                 >
-                  <span className="text-lg">📅</span>
+                  <NavigationIcon name="events" />
                   <span>Events</span>
                 </Link>
 
-                {/* 3. Create Event (Admin Only or Creators) */}
-                {isAdmin && (
+                {!isAdmin && (
                   <Link
-                    href="/create"
+                    href="/registrations"
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition ${
-                      pathname === "/create"
+                      pathname === "/registrations"
                         ? "bg-indigo-50 text-indigo-700 font-semibold shadow-xs"
                         : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                     }`}
                   >
-                    <span className="text-lg">➕</span>
-                    <span>Create Event</span>
+                    <svg
+                      className="h-5 w-5 shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="5" y="4" width="14" height="17" rx="2" />
+                      <path d="M9 4.5h6M9 10h6M9 14h6M9 18h3" />
+                    </svg>
+                    <span>My Registrations</span>
                   </Link>
                 )}
 
-                {/* 4. Attendees / Users (Admin Only) */}
+                {/* 3. Venues */}
+                <Link
+                  href="/venues"
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition ${
+                    pathname === "/venues"
+                      ? "bg-indigo-50 text-indigo-700 font-semibold shadow-xs"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                  }`}
+                >
+                  <NavigationIcon name="venues" />
+                  <span>Venues</span>
+                </Link>
+
+                {/* 4. Registrations (Admin Only) */}
+                {isAdmin && (
+                  <Link
+                    href="/admin/registrations"
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition ${
+                      pathname === "/admin/registrations"
+                        ? "bg-indigo-50 text-indigo-700 font-semibold shadow-xs"
+                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    }`}
+                  >
+                    <svg
+                      className="h-5 w-5 shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="5" y="4" width="14" height="17" rx="2" />
+                      <path d="M9 4.5h6M9 10h6M9 14h6M9 18h3" />
+                    </svg>
+                    <span>Registrations</span>
+                  </Link>
+                )}
+
+                {/* 5. Attendees / Users (Admin Only) */}
                 {isAdmin && (
                   <Link
                     href="/admin/users"
@@ -149,23 +272,10 @@ export default function RootLayout({
                         : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                     }`}
                   >
-                    <span className="text-lg">👥</span>
+                    <NavigationIcon name="users" />
                     <span>Attendees / Users</span>
                   </Link>
                 )}
-
-                {/* 5. Venues */}
-                <Link
-                  href="/venues"
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition ${
-                    pathname === "/venues"
-                      ? "bg-indigo-50 text-indigo-700 font-semibold shadow-xs"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  }`}
-                >
-                  <span className="text-lg">📍</span>
-                  <span>Venues</span>
-                </Link>
 
                 {/* 6. AI Agent (Core Infosys Requirement!) */}
                 <Link
@@ -176,7 +286,7 @@ export default function RootLayout({
                       : "bg-indigo-50/50 text-indigo-700 hover:bg-indigo-50"
                   }`}
                 >
-                  <span className="text-lg">🤖</span>
+                  <NavigationIcon name="agent" />
                   <span>AI Agent</span>
                   <span className="ml-auto text-[10px] bg-indigo-200 text-indigo-900 font-bold px-1.5 py-0.5 rounded-full uppercase">Llama</span>
                 </Link>
@@ -190,24 +300,12 @@ export default function RootLayout({
                       : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   }`}
                 >
-                  <span className="text-lg">👤</span>
+                  <NavigationIcon name="profile" />
                   <span>Profile</span>
                 </Link>
               </nav>
             </div>
 
-            {/* Sidebar Promo Card (Like Reference Image) */}
-            <div className="rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 p-4 text-white text-center shadow-md">
-              <span className="text-2xl mb-1 block">🤖</span>
-              <h3 className="font-bold text-sm">AI Event Assistant</h3>
-              <p className="text-[11px] text-indigo-100 mt-1">Book venues, create events & ask rules in plain English.</p>
-              <Link
-                href="/ai-assistant"
-                className="mt-3 inline-block w-full py-1.5 px-3 bg-white text-indigo-700 font-bold text-xs rounded-lg hover:bg-indigo-50 transition shadow-sm"
-              >
-                Chat with Agent →
-              </Link>
-            </div>
           </aside>
 
           {/* ========================================================= */}
@@ -215,54 +313,24 @@ export default function RootLayout({
           {/* ========================================================= */}
           <div className="flex-1 flex flex-col min-w-0">
             {/* Top Bar Header */}
-            <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-6 sticky top-0 z-40 shadow-xs">
-              {/* Search Bar */}
-              <div className="flex items-center gap-2 bg-slate-100 rounded-xl px-3 py-1.5 w-72 md:w-96 border border-slate-200 focus-within:border-indigo-500 focus-within:bg-white transition">
-                <span className="text-slate-400 text-sm">🔍</span>
-                <input
-                  type="text"
-                  placeholder="Search events, attendees, venues..."
-                  className="bg-transparent text-sm w-full outline-hidden text-slate-800 placeholder-slate-400"
-                />
-              </div>
-
-              {/* Right User & Utility Controls */}
-              <div className="flex items-center gap-4">
-                {/* Date Display */}
-                <div className="hidden lg:flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-                  <span>📅</span>
-                  <span>{currentDate}</span>
+            <header className="sticky top-0 z-40 flex h-16 items-center justify-end border-b border-slate-200 bg-white px-6 shadow-xs">
+              <div className="ml-auto flex min-w-0 items-center justify-end gap-2 sm:gap-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-semibold text-white">
+                  {userName.trim().charAt(0).toUpperCase() || "U"}
                 </div>
-
-                {/* Notifications Icon */}
+                <p className="max-w-[24vw] truncate text-sm font-semibold text-slate-800 sm:max-w-[140px]">
+                  {userName}
+                </p>
+                <p className="max-w-[34vw] truncate text-xs font-medium text-slate-600 sm:max-w-[220px]">
+                  {userEmail}
+                </p>
                 <button
-                  type="button"
-                  title="Notifications"
-                  className="relative p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition"
+                  onClick={handleLogout}
+                  className="shrink-0 rounded-lg bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+                  title="Logout"
                 >
-                  <span className="text-lg">🔔</span>
-                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"></span>
+                  Logout
                 </button>
-
-                {/* User Profile Avatar & Role */}
-                <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white font-bold text-sm shadow-xs">
-                    {userName.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="hidden sm:block text-left">
-                    <p className="text-xs font-bold text-slate-800 leading-tight truncate max-w-[120px]">{userName}</p>
-                    <p className="text-[10px] font-semibold text-indigo-600 uppercase tracking-wider">
-                      {isAdmin ? "Administrator" : "Attendee"}
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="ml-2 px-2.5 py-1 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition"
-                    title="Logout"
-                  >
-                    Logout
-                  </button>
-                </div>
               </div>
             </header>
 

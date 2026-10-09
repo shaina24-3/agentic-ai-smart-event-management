@@ -1,39 +1,29 @@
 from typing import List, Dict
 
-def chunk_text(text: str, chunk_size: int = 400, overlap: int = 50) -> List[str]:
+def chunk_text(text: str, chunk_size: int = 700, overlap: int = 100) -> List[str]:
     """
-    Splits text into chunks preserving sentence/paragraph boundaries when possible.
+    Splits text into meaningful policy sections, ensuring headings are
+    never orphaned from their descriptive policy content.
     """
-    paragraphs = text.split("\n\n")
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     chunks = []
     current_chunk = ""
 
     for para in paragraphs:
-        cleaned_para = para.strip()
-        if not cleaned_para:
-            continue
-        
-        if len(current_chunk) + len(cleaned_para) <= chunk_size:
-            current_chunk += ("\n\n" if current_chunk else "") + cleaned_para
+        # If current chunk is very short (e.g. just a heading), always append
+        if len(current_chunk) < 150:
+            current_chunk = (current_chunk + "\n\n" + para) if current_chunk else para
+        elif len(current_chunk) + len(para) <= chunk_size:
+            current_chunk += "\n\n" + para
         else:
             if current_chunk:
                 chunks.append(current_chunk)
-            current_chunk = cleaned_para
+            current_chunk = para
 
     if current_chunk:
         chunks.append(current_chunk)
 
-    # Fallback if any single chunk is still overly large
-    final_chunks = []
-    for c in chunks:
-        if len(c) > chunk_size * 2:
-            words = c.split()
-            for i in range(0, len(words), 80):
-                final_chunks.append(" ".join(words[i:i + 80]))
-        else:
-            final_chunks.append(c)
-
-    return final_chunks
+    return chunks
 
 def create_chunks_from_documents(documents: List[Dict[str, str]]) -> List[Dict[str, any]]:
     """

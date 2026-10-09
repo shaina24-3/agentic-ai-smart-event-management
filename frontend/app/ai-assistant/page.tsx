@@ -19,8 +19,8 @@ function createWelcomeMessage(): Message {
   return {
     id: "init",
     sender: "bot",
-    text: "👋 Hello! I am your AI Smart Event Assistant powered by Llama.\n\nYou can ask me to:\n• 🏛️ **Check Venues:** 'What are the venues available?'\n• 📅 **Upcoming Events:** 'What are the upcoming events?'\n• ➕ **Create & Book:** 'Create event AI Workshop on 2026-10-25 at venue 1 with 40 seats'\n• 📖 **Check Policies (RAG):** 'What is the cancellation and refund policy?'",
-    timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    text: "👋 Hello! I am your AI Smart Event Assistant powered by Llama.\n\nYou can ask me to:\n• **Check Venues:** 'What are the venues available?'\n• **Upcoming Events:** 'What are the upcoming events?'\n• **Create & Book:** 'Create event AI Workshop on 2026-10-25 at venue 1 with 40 seats'\n• **Check Policies (RAG):** 'What is the cancellation and refund policy?'",
+    timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true }),
   };
 }
 
@@ -52,8 +52,15 @@ function AIAssistantChat() {
       if (storedMessages) {
         const parsedMessages: unknown = JSON.parse(storedMessages);
         if (Array.isArray(parsedMessages) && parsedMessages.every(isMessage)) {
+          const welcomeMessage = createWelcomeMessage();
+          const hasWelcomeMessage = parsedMessages.some((message) => message.id === "init");
+          const restoredMessages = hasWelcomeMessage
+            ? parsedMessages.map((message) =>
+                message.id === "init" ? { ...message, text: welcomeMessage.text } : message
+              )
+            : [welcomeMessage, ...parsedMessages];
           // eslint-disable-next-line react-hooks/set-state-in-effect
-          setMessages(parsedMessages);
+          setMessages(restoredMessages);
           setMessagesLoaded(true);
           return;
         }
@@ -92,7 +99,7 @@ function AIAssistantChat() {
       id: String(Date.now()),
       sender: "user",
       text: textToSend,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true }),
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -100,7 +107,7 @@ function AIAssistantChat() {
     setLoading(true);
 
     const token = localStorage.getItem("access_token");
-    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/chat`, {
@@ -124,7 +131,7 @@ function AIAssistantChat() {
         intent: data.intent,
         toolsUsed: data.tools_used,
         latency: data.latency_ms,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true }),
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -133,7 +140,7 @@ function AIAssistantChat() {
         id: String(Date.now() + 1),
         sender: "bot",
         text: "⚠️ Could not connect to the AI Agent backend. Please verify that the FastAPI backend server is running on port 8000.",
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true }),
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
@@ -161,28 +168,11 @@ function AIAssistantChat() {
     }
   };
 
-  const suggestionPrompts = [
-    "🏛️ What are the venues available?",
-    "📅 What are the upcoming events?",
-    "➕ Create event AI Summit on 2026-10-25 at venue 1 with 40 seats",
-    "📖 What is the cancellation and refund policy?",
-    "⚠️ Can I book 300 seats in venue 2?",
-  ];
-
   return (
     <div className="max-w-4xl mx-auto flex flex-col h-[calc(100vh-8rem)] bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
       {/* Header */}
       <div className="p-4 px-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-indigo-50/30">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center font-bold text-xl shadow-xs">
-            🤖
-          </div>
-          <div>
-            <h1 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              Agentic AI Assistant
-            </h1>
-          </div>
-        </div>
+        <h1 className="font-bold text-slate-900 text-base">Agentic AI Assistant</h1>
         <button
           type="button"
           onClick={clearChat}
@@ -228,22 +218,6 @@ function AIAssistantChat() {
         )}
 
         <div ref={messagesEndRef} />
-      </div>
-
-      {/* Suggested Quick Prompt Chips */}
-      <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 flex items-center gap-2 overflow-x-auto text-xs shrink-0">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">
-          Try:
-        </span>
-        {suggestionPrompts.map((p, idx) => (
-          <button
-            key={idx}
-            onClick={() => sendMessage(p)}
-            className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-medium rounded-lg border border-slate-200 shrink-0 transition"
-          >
-            {p}
-          </button>
-        ))}
       </div>
 
       {/* Chat Input Bar */}

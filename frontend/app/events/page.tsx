@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { formatTime } from "../../lib/formatTime";
 
 type Event = {
   id: number;
@@ -14,6 +15,37 @@ type Event = {
   capacity: number;
 };
 
+type VenueOption = {
+  id: number;
+  name: string;
+  location: string;
+};
+
+type EditEventForm = {
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  venue_id: string;
+  capacity: string;
+};
+
+function toTimeInput(value: string): string {
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (!match) return "";
+
+  let hour = Number(match[1]);
+  const marker = match[3]?.toUpperCase();
+  if (marker) {
+    if (hour < 1 || hour > 12) return "";
+    hour = marker === "AM"
+      ? (hour === 12 ? 0 : hour)
+      : (hour === 12 ? 12 : hour + 12);
+  }
+  if (hour > 23 || Number(match[2]) > 59) return "";
+  return `${String(hour).padStart(2, "0")}:${match[2]}`;
+}
+
 export default function MyEvents() {
   const router = useRouter();
 
@@ -21,6 +53,17 @@ export default function MyEvents() {
   const [search, setSearch] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [venues, setVenues] = useState<VenueOption[]>([]);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [editForm, setEditForm] = useState<EditEventForm>({
+    title: "",
+    description: "",
+    date: "",
+    time: "",
+    venue_id: "",
+    capacity: "",
+  });
+  const [savingEvent, setSavingEvent] = useState(false);
 
   useEffect(() => {
     const loadEvents = async () => {
@@ -54,7 +97,8 @@ export default function MyEvents() {
 
         console.log("EVENTS PAGE USER:", userData);
 
-        setIsAdmin(userData.role === "ADMIN");
+        const adminUser = userData.role === "ADMIN";
+        setIsAdmin(adminUser);
 
         // Load events
         const response = await fetch(
@@ -69,6 +113,15 @@ export default function MyEvents() {
         }
 
         setEvents(data);
+
+        if (adminUser) {
+          const venueResponse = await fetch("http://127.0.0.1:8000/api/venues", {
+            cache: "no-store",
+          });
+          if (venueResponse.ok) {
+            setVenues(await venueResponse.json());
+          }
+        }
       } catch (error) {
         console.error(error);
         alert("Cannot connect to the backend.");
@@ -80,7 +133,7 @@ export default function MyEvents() {
     loadEvents();
   }, [router]);
 
-  const deleteEvent = (id: number) => {
+  const deleteEvent = async (id: number) => {
     if (!isAdmin) {
       alert("Only administrators can delete events.");
       return;
@@ -94,18 +147,127 @@ export default function MyEvents() {
       return;
     }
 
-    const updatedEvents = events.filter(
-      (event) => event.id !== id
-    );
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      router.push("/");
+      return;
+    }
 
-    setEvents(updatedEvents);
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/events/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert(result.detail || "Failed to delete event.");
+        return;
+      }
 
-    localStorage.setItem(
-      "events",
-      JSON.stringify(updatedEvents)
-    );
+      setEvents((currentEvents) => currentEvents.filter((event) => event.id !== id));
+      alert("Event deleted successfully!");
+    } catch (error) {
+      console.error(error);
+      alert("Could not connect to the backend.");
+    }
+  };
 
-    alert("Event deleted successfully!");
+  const openEditEvent = (event: Event) => {
+    setEditingEvent(event);
+    setEditForm({
+      title: event.title,
+      description: event.description || "",
+      date: event.date,
+      time: toTimeInput(event.time),
+      venue_id: String(event.venue_id || ""),
+      capacity: String(event.capacity),
+    });
+  };
+
+  const updateEditForm = (field: keyof EditEventForm, value: string) => {
+    setEditForm((currentForm) => ({ ...currentForm, [field]: value }));
+  };
+
+  const saveEvent = async (formEvent: FormEvent<HTMLFormElement>) => {
+    formEvent.preventDefault();
+    if (!isAdmin || !editingEvent) return;
+    if (Object.values(editForm).some((value) => !value.trim())) {
+      alert("Please complete all event fields.");
+      return;
+    }
+    if (!Number.isInteger(Number(editForm.capacity)) || Number(editForm.capacity) < 1) {
+      alert("Capacity must be a positive whole number.");
+      return;
+    }
+
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      router.push("/");
+      return;
+    }
+
+    const updatedFields = {
+      title: editForm.title.trim(),
+      description: editForm.description.trim(),
+      date: editForm.date,
+      time: editForm.time,
+      venue_id: Number(editForm.venue_id),
+      capacity: Number(editForm.capacity),
+    };
+
+    setSavingEvent(true);
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/events/${editingEvent.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(updatedFields),
+      });
+      const responseData = await response.json().catch(() => ({}));
+
+      const refreshResponse = await fetch("http://127.0.0.1:8000/api/events", {
+        cache: "no-store",
+      });
+      if (refreshResponse.ok) {
+        const refreshedEvents: Event[] = await refreshResponse.json();
+        setEvents(refreshedEvents);
+        const savedEvent = refreshedEvents.find((event) => event.id === editingEvent.id);
+        const persisted = savedEvent &&
+          savedEvent.title === updatedFields.title &&
+          savedEvent.description === updatedFields.description &&
+          savedEvent.date === updatedFields.date &&
+          savedEvent.time === updatedFields.time &&
+          Number(savedEvent.venue_id) === updatedFields.venue_id &&
+          Number(savedEvent.capacity) === updatedFields.capacity;
+
+        if (persisted) {
+          setEditingEvent(null);
+          alert("Event updated successfully!");
+          return;
+        }
+      }
+
+      if (!response.ok) {
+        alert(responseData.detail || "Failed to update event.");
+        return;
+      }
+
+      const selectedVenue = venues.find((venue) => venue.id === updatedFields.venue_id);
+      setEvents((currentEvents) => currentEvents.map((event) =>
+        event.id === editingEvent.id
+          ? { ...event, ...updatedFields, venue: selectedVenue?.name, venue_name: selectedVenue?.name }
+          : event
+      ));
+      setEditingEvent(null);
+      alert("Event updated successfully!");
+    } catch (error) {
+      console.error(error);
+      alert("Could not connect to the backend.");
+    } finally {
+      setSavingEvent(false);
+    }
   };
 
   const filteredEvents = events.filter((event) => {
@@ -184,6 +346,123 @@ export default function MyEvents() {
           />
         </div>
 
+        {isAdmin && editingEvent && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="edit-event-title"
+              className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+            >
+              <h2 id="edit-event-title" className="text-xl font-semibold text-slate-900">
+                Edit Event
+              </h2>
+              <form onSubmit={saveEvent} className="mt-5 grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label htmlFor="edit-event-name" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Event Title
+                  </label>
+                  <input
+                    id="edit-event-name"
+                    required
+                    value={editForm.title}
+                    onChange={(event) => updateEditForm("title", event.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label htmlFor="edit-event-description" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Description
+                  </label>
+                  <textarea
+                    id="edit-event-description"
+                    rows={3}
+                    value={editForm.description}
+                    onChange={(event) => updateEditForm("description", event.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-event-date" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Date
+                  </label>
+                  <input
+                    id="edit-event-date"
+                    type="date"
+                    required
+                    value={editForm.date}
+                    onChange={(event) => updateEditForm("date", event.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-event-time" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Time
+                  </label>
+                  <input
+                    id="edit-event-time"
+                    type="time"
+                    required
+                    value={editForm.time}
+                    onChange={(event) => updateEditForm("time", event.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-event-venue" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Venue
+                  </label>
+                  <select
+                    id="edit-event-venue"
+                    required
+                    value={editForm.venue_id}
+                    onChange={(event) => updateEditForm("venue_id", event.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="" disabled>Select a venue</option>
+                    {venues.map((venue) => (
+                      <option key={venue.id} value={venue.id}>
+                        {venue.name} · {venue.location}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="edit-event-capacity" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Capacity
+                  </label>
+                  <input
+                    id="edit-event-capacity"
+                    type="number"
+                    min="1"
+                    required
+                    value={editForm.capacity}
+                    onChange={(event) => updateEditForm("capacity", event.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div className="flex justify-end gap-3 pt-2 sm:col-span-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingEvent(null)}
+                    disabled={savingEvent}
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEvent}
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {savingEvent ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        )}
+
         {/* No Events */}
         {events.length === 0 ? (
           <div className="mt-8 rounded-xl bg-white p-8 text-center shadow">
@@ -249,12 +528,12 @@ export default function MyEvents() {
                 </h2>
 
                 {/* Description */}
-                <p className="mt-3 text-slate-600">
+                  <p className="mt-3 text-slate-900">
                   {event.description}
                 </p>
 
                 {/* Event Information */}
-                <div className="mt-5 space-y-2 text-sm text-slate-700">
+                <div className="mt-5 space-y-2 text-sm text-slate-900">
 
                   <p>
                     <strong>Date:</strong>{" "}
@@ -263,7 +542,7 @@ export default function MyEvents() {
 
                   <p>
                     <strong>Time:</strong>{" "}
-                    {event.time}
+                    {formatTime(event.time)}
                   </p>
 
                   <p>
@@ -281,28 +560,11 @@ export default function MyEvents() {
                 {/* Action Buttons */}
                 <div className="mt-5 flex flex-wrap gap-3">
 
-                  {/* VIEW - EVERYONE */}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      router.push(
-                        `/events/view/${event.id}`
-                      )
-                    }
-                    className="rounded-lg bg-slate-700 px-4 py-2 font-medium text-white transition hover:bg-slate-800"
-                  >
-                    View Event
-                  </button>
-
                   {/* EDIT - ADMIN ONLY */}
                   {isAdmin && (
                     <button
                       type="button"
-                      onClick={() =>
-                        router.push(
-                          `/events/edit/${event.id}`
-                        )
-                      }
+                      onClick={() => openEditEvent(event)}
                       className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition hover:bg-blue-700"
                     >
                       Edit Event
