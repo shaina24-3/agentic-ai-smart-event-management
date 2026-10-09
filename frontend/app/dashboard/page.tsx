@@ -3,6 +3,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatTime } from "../../lib/formatTime";
+import { API_BASE_URL } from "@/lib/api";
 
 type Event = {
   id: number;
@@ -44,7 +45,7 @@ export default function Dashboard() {
     try {
       // Get the actual logged-in user from backend
       const userResponse = await fetch(
-        "http://127.0.0.1:8000/api/auth/me",
+        `${API_BASE_URL}/api/auth/me`,
         {
           method: "GET",
           headers: {
@@ -78,7 +79,7 @@ export default function Dashboard() {
 
       // Load events
       const eventsResponse = await fetch(
-        "http://127.0.0.1:8000/api/events",
+        `${API_BASE_URL}/api/events`,
         {
           cache: "no-store",
         }
@@ -91,7 +92,7 @@ export default function Dashboard() {
 
       // Load current user's registrations
       const registrationResponse = await fetch(
-        "http://127.0.0.1:8000/api/registrations/me",
+        `${API_BASE_URL}/api/registrations/me`,
         {
           method: "GET",
           headers: {
@@ -130,7 +131,7 @@ export default function Dashboard() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/events/${eventId}/register`,
+        `${API_BASE_URL}/api/events/${eventId}/register`,
         {
           method: "POST",
           headers: {
@@ -172,7 +173,7 @@ export default function Dashboard() {
 
       try {
         const registrationResponse = await fetch(
-          "http://127.0.0.1:8000/api/registrations/me",
+          `${API_BASE_URL}/api/registrations/me`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -204,7 +205,7 @@ export default function Dashboard() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/events/${eventId}/register`,
+        `${API_BASE_URL}/api/events/${eventId}/register`,
         {
           method: "DELETE",
           headers: {
@@ -235,7 +236,7 @@ export default function Dashboard() {
 
       try {
         const registrationResponse = await fetch(
-          "http://127.0.0.1:8000/api/registrations/me",
+          `${API_BASE_URL}/api/registrations/me`,
           {
             headers: {
               Authorization: `Bearer ${token}`,

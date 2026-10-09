@@ -717,7 +717,20 @@ def test_registration_uses_new_events_from_active_database_for_user_and_admin():
             db.add(event)
             db.commit()
             db.refresh(event)
+            similar_event = Event(
+                title=f"Special {event.title}",
+                date="2098-09-16",
+                time="11:00 AM",
+                venue_id=venue.id,
+                capacity=50,
+                created_by=admin.id,
+                status="SCHEDULED",
+            )
+            db.add(similar_event)
+            db.commit()
+            db.refresh(similar_event)
             events.append(event)
+            events.append(similar_event)
 
             result = execute_agent_workflow(
                 db,
@@ -732,6 +745,42 @@ def test_registration_uses_new_events_from_active_database_for_user_and_admin():
             assert result["intent"] == "REGISTER_PARTICIPANT"
             assert "register_participant" in result["tools_used"]
             assert registration is not None
+
+            followup_title = f"Follow-up Exact Registration {actor.role} {suffix}"
+            followup_event = Event(
+                title=followup_title,
+                date="2098-10-17",
+                time="10:00 AM",
+                venue_id=venue.id,
+                capacity=50,
+                created_by=admin.id,
+                status="SCHEDULED",
+            )
+            longer_match = Event(
+                title=f"Special {followup_title}",
+                date="2098-10-18",
+                time="11:00 AM",
+                venue_id=venue.id,
+                capacity=50,
+                created_by=admin.id,
+                status="SCHEDULED",
+            )
+            db.add_all([followup_event, longer_match])
+            db.commit()
+            db.refresh(followup_event)
+            events.extend([followup_event, longer_match])
+
+            prompt_result = execute_agent_workflow(db, actor.id, "I want to register")
+            assert prompt_result["intent"] == "REGISTER_AWAITING_EVENT_NAME"
+            followup_result = execute_agent_workflow(db, actor.id, followup_title.lower())
+            followup_registration = db.query(Registration).filter(
+                Registration.user_id == actor.id,
+                Registration.event_id == followup_event.id,
+                Registration.status == "CONFIRMED",
+            ).first()
+            assert followup_result["intent"] == "REGISTER_PARTICIPANT"
+            assert "register_participant" in followup_result["tools_used"]
+            assert followup_registration is not None
 
         deleted_event = Event(
             title=f"Deleted Registration Sync Event {suffix}",
@@ -840,8 +889,9 @@ def test_cancellation_prompt_name_followup_and_direct_command_for_user_and_admin
                 "I want to cancel my registration",
             )
             assert prompt_result["response"] == (
-                "Sure, which event's registration would you like to cancel? Please provide the name."
+                "Please provide the name of the event whose registration you want to cancel."
             )
+            assert prompt_result["intent"] == "REGISTRATION_CANCELLATION"
             assert prompt_result["tools_used"] == []
 
             name_result = execute_agent_workflow(db, actor.id, event.title)
@@ -879,6 +929,70 @@ def test_cancellation_prompt_name_followup_and_direct_command_for_user_and_admin
                 f"Success! Your registration for '{direct_event.title}' has been successfully canceled."
             )
             assert "cancel_registration" in direct_result["tools_used"]
+
+            duplicate_title = f"Cancellation Duplicate Fest2026 {actor.role} {suffix}"
+            older_duplicate = Event(
+                title=duplicate_title,
+                date="2098-10-19",
+                time="10:00 AM",
+                venue_id=venue.id,
+                capacity=50,
+                created_by=admin_id,
+                status="SCHEDULED",
+            )
+            newer_duplicate = Event(
+                title=duplicate_title.lower(),
+                date="2098-10-20",
+                time="11:00 AM",
+                venue_id=venue.id,
+                capacity=50,
+                created_by=admin_id,
+                status="SCHEDULED",
+            )
+            db.add_all([older_duplicate, newer_duplicate])
+            db.commit()
+            db.refresh(older_duplicate)
+            db.refresh(newer_duplicate)
+            events.extend([older_duplicate, newer_duplicate])
+            db.add_all([
+                Registration(
+                    user_id=actor.id,
+                    event_id=older_duplicate.id,
+                    status="CONFIRMED",
+                    registered_at=datetime.utcnow() - timedelta(days=1),
+                ),
+                Registration(
+                    user_id=actor.id,
+                    event_id=newer_duplicate.id,
+                    status="CONFIRMED",
+                    registered_at=datetime.utcnow(),
+                ),
+            ])
+            db.commit()
+
+            duplicate_result = execute_agent_workflow(
+                db,
+                actor.id,
+                f"Cancel my registration for event {duplicate_title}",
+            )
+            if actor.role == "USER":
+                assert duplicate_result["response"] == (
+                    f"Success! Your registration for '{newer_duplicate.title}' has been successfully canceled."
+                )
+                assert "cancel_registration" in duplicate_result["tools_used"]
+                assert db.query(Registration).filter(
+                    Registration.user_id == actor.id,
+                    Registration.event_id == newer_duplicate.id,
+                    Registration.status == "CONFIRMED",
+                ).first() is None
+                assert db.query(Registration).filter(
+                    Registration.user_id == actor.id,
+                    Registration.event_id == older_duplicate.id,
+                    Registration.status == "CONFIRMED",
+                ).first() is not None
+            else:
+                assert "Which registration should I cancel?" in duplicate_result["response"]
+                assert duplicate_result["tools_used"] == []
     finally:
         db.rollback()
         actor_ids = [actor.id for actor in actors]

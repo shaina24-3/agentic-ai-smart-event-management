@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatDateTime } from "../../lib/formatTime";
+import { API_BASE_URL } from "@/lib/api";
 
 type PersonalRegistration = {
   id: number;
@@ -20,7 +21,7 @@ async function addEventDates(
   const eventDateEntries = await Promise.all(
     eventIds.map(async (eventId) => {
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/events/${eventId}`, {
+        const response = await fetch(`${API_BASE_URL}/api/events/${eventId}`, {
           cache: "no-store",
         });
         if (!response.ok) return [eventId, null] as const;
@@ -57,7 +58,7 @@ export default function UserRegistrationsPage() {
       }
 
       try {
-        const response = await fetch("http://127.0.0.1:8000/api/user/registrations", {
+        const response = await fetch(`${API_BASE_URL}/api/user/registrations`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -97,7 +98,7 @@ export default function UserRegistrationsPage() {
       return;
     }
 
-    const response = await fetch("http://127.0.0.1:8000/api/user/registrations", {
+    const response = await fetch(`${API_BASE_URL}/api/user/registrations`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
@@ -119,7 +120,7 @@ export default function UserRegistrationsPage() {
     setMessage("");
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/events/${registration.event_id}/register`,
+        `${API_BASE_URL}/api/events/${registration.event_id}/register`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },

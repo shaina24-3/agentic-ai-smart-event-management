@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatDateTime } from "../../../lib/formatTime";
+import { API_BASE_URL } from "@/lib/api";
 
 type RegistrationRecord = {
   id: number;
@@ -30,7 +31,7 @@ type EventCapacitySummary = {
 };
 
 async function fetchEventCapacitySummaries(token: string): Promise<EventCapacitySummary[]> {
-  const eventsResponse = await fetch("http://127.0.0.1:8000/api/events");
+  const eventsResponse = await fetch(`${API_BASE_URL}/api/events`);
   if (!eventsResponse.ok) {
     throw new Error("Could not load events.");
   }
@@ -39,7 +40,7 @@ async function fetchEventCapacitySummaries(token: string): Promise<EventCapacity
   return Promise.all(
     events.map(async (event) => {
       const registrationsResponse = await fetch(
-        `http://127.0.0.1:8000/api/events/${event.id}/registrations`,
+        `${API_BASE_URL}/api/events/${event.id}/registrations`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!registrationsResponse.ok) {
@@ -79,7 +80,7 @@ export default function AdminRegistrationsPage() {
     }
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/admin/registrations", {
+      const response = await fetch(`${API_BASE_URL}/api/admin/registrations`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -122,7 +123,7 @@ export default function AdminRegistrationsPage() {
       }
 
       try {
-        const response = await fetch("http://127.0.0.1:8000/api/admin/registrations", {
+        const response = await fetch(`${API_BASE_URL}/api/admin/registrations`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -178,7 +179,7 @@ export default function AdminRegistrationsPage() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/admin/registrations/${registration.id}/${action}`,
+        `${API_BASE_URL}/api/admin/registrations/${registration.id}/${action}`,
         {
           method: "PUT",
           headers: { Authorization: `Bearer ${token}` },

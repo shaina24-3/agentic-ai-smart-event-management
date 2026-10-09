@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from .models import AgentRun, Event, ToolCall, User, Venue
+from .models import AgentRun, Event, Registration, ToolCall, User, Venue
 from .rag import rag_engine, answer_policy_question
 from .tools import (
     cancel_registration,
@@ -249,7 +249,10 @@ def _pending_cancellation_draft(db: Session, user_id: int) -> Optional[Dict[str,
     )
     if (
         not run
-        or run.detected_intent != "CANCEL_REGISTRATION_AWAITING_EVENT_NAME"
+        or run.detected_intent not in (
+            "REGISTRATION_CANCELLATION",
+            "CANCEL_REGISTRATION_AWAITING_EVENT_NAME",
+        )
         or not run.tool_output
     ):
         return None
@@ -259,6 +262,26 @@ def _pending_cancellation_draft(db: Session, user_id: int) -> Optional[Dict[str,
         return json.loads(run.tool_output)
     except (TypeError, json.JSONDecodeError):
         return None
+
+
+def _most_recent_user_registration_event(
+    db: Session,
+    user_id: int,
+    events: list[Event],
+) -> Optional[Event]:
+    if not events:
+        return None
+    return (
+        db.query(Event)
+        .join(Registration, Registration.event_id == Event.id)
+        .filter(
+            Registration.user_id == user_id,
+            Registration.status == "CONFIRMED",
+            Event.id.in_([event.id for event in events]),
+        )
+        .order_by(Registration.registered_at.desc(), Registration.id.desc())
+        .first()
+    )
 
 
 def _extract_registration_reference(message: str, cancelling: bool = False) -> Optional[str]:
@@ -644,10 +667,16 @@ def execute_agent_workflow(db: Session, user_id: int, message: str) -> dict:
     )):
         event_reference = message.strip().strip(" .,!?'\"")
         matches = find_event_matches_any_status(db, event_reference)
-        intent = "CANCEL_REGISTRATION_AWAITING_EVENT_NAME"
+        intent = "REGISTRATION_CANCELLATION"
         tool_output = json.dumps({"awaiting_event_name": True})
-        if len(matches) == 1:
-            event = matches[0]
+        event = (
+            matches[0]
+            if len(matches) == 1
+            else _most_recent_user_registration_event(db, user_id, matches)
+            if not is_admin
+            else None
+        )
+        if event:
             tools_used.append("cancel_registration")
             tool_input = f"user_id={user_id}, event_id={event.id}"
             result = cancel_registration(db, user_id, event.id)
@@ -660,11 +689,15 @@ def execute_agent_workflow(db: Session, user_id: int, message: str) -> dict:
             else:
                 intent = "CANCEL_REGISTRATION_FAILED"
                 response_text = result["message"]
-        elif matches:
+        elif matches and is_admin:
             tool_output = json.dumps({"awaiting_event_name": True})
             response_text = "I found multiple matching events: " + ", ".join(
                 event.title for event in matches
             ) + ". Which event's registration would you like to cancel?"
+        elif matches:
+            intent = "CANCEL_REGISTRATION_FAILED"
+            tool_output = json.dumps({"active_registration_found": False})
+            response_text = f"I couldn't find an active registration matching '{event_reference}'."
         else:
             response_text = (
                 f"I couldn't find an active event matching '{event_reference}'. "
@@ -691,10 +724,14 @@ def execute_agent_workflow(db: Session, user_id: int, message: str) -> dict:
     )):
         # Context Capture: The user was asked for the event name in previous turn.
         # Seamlessly pass extracted parameter into flexible search tool.
-        event_candidate = message.strip()
+        event_candidate = message.strip().strip(" .,!?'\"")
         matches = find_event_matches(db, event_candidate)
-        if len(matches) == 1:
-            target_event = matches[0]
+        exact_matches = [
+            event for event in matches
+            if event.title.casefold() == event_candidate.casefold()
+        ]
+        target_event = exact_matches[0] if exact_matches else matches[0] if len(matches) == 1 else None
+        if target_event:
             tools_used.append("register_participant")
             tool_input = f"user_id={user_id}, event_id={target_event.id}"
             result = register_participant(db, user_id, target_event.id)
@@ -821,14 +858,20 @@ def execute_agent_workflow(db: Session, user_id: int, message: str) -> dict:
     elif is_cancel_registration:
         event_reference = _extract_registration_reference(message, cancelling=True)
         if not event_reference:
-            intent = "CANCEL_REGISTRATION_AWAITING_EVENT_NAME"
+            intent = "REGISTRATION_CANCELLATION"
             tool_output = json.dumps({"awaiting_event_name": True})
-            response_text = "Sure, which event's registration would you like to cancel? Please provide the name."
+            response_text = "Please provide the name of the event whose registration you want to cancel."
         else:
             matches = find_event_matches_any_status(db, event_reference)
             intent = "CANCEL_REGISTRATION"
-            if len(matches) == 1:
-                event = matches[0]
+            event = (
+                matches[0]
+                if len(matches) == 1
+                else _most_recent_user_registration_event(db, user_id, matches)
+                if not is_admin
+                else None
+            )
+            if event:
                 tools_used.append("cancel_registration")
                 tool_input = f"user_id={user_id}, event_id={event.id}"
                 result = cancel_registration(db, user_id, event.id)
@@ -841,12 +884,16 @@ def execute_agent_workflow(db: Session, user_id: int, message: str) -> dict:
                 else:
                     intent = "CANCEL_REGISTRATION_FAILED"
                     response_text = result["message"]
-            elif matches:
-                intent = "CANCEL_REGISTRATION_AWAITING_EVENT_NAME"
+            elif matches and is_admin:
+                intent = "REGISTRATION_CANCELLATION"
                 tool_output = json.dumps({"awaiting_event_name": True})
                 response_text = "I found multiple matching events: " + ", ".join(
                     f"{event.title} (ID {event.id})" for event in matches
                 ) + ". Which registration should I cancel?"
+            elif matches:
+                intent = "CANCEL_REGISTRATION_FAILED"
+                tool_output = json.dumps({"active_registration_found": False})
+                response_text = f"I couldn't find an active registration matching '{event_reference}'."
             else:
                 intent = "CANCEL_REGISTRATION_FAILED"
                 response_text = f"I couldn't find an active event matching '{event_reference}'. Please check the event name and try again."
@@ -874,8 +921,12 @@ def execute_agent_workflow(db: Session, user_id: int, message: str) -> dict:
         else:
             intent = "REGISTER_PARTICIPANT"
             matches = find_event_matches(db, event_reference or "")
-            if len(matches) == 1:
-                event = matches[0]
+            exact_matches = [
+                event for event in matches
+                if event.title.casefold() == (event_reference or "").casefold()
+            ]
+            event = exact_matches[0] if exact_matches else matches[0] if len(matches) == 1 else None
+            if event:
                 tools_used.append("register_participant")
                 tool_input = f"user_id={user_id}, event_id={event.id}"
                 result = register_participant(db, user_id, event.id)

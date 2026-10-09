@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useEffectEvent, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { API_BASE_URL } from "@/lib/api";
 
 type Message = {
   id: string;
@@ -107,7 +108,23 @@ function AIAssistantChat() {
     setLoading(true);
 
     const token = localStorage.getItem("access_token");
-    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+    if (!token) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: String(Date.now() + 1),
+          sender: "bot",
+          text: "Your login session is missing. Please log in again before registering.",
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+          }),
+        },
+      ]);
+      setLoading(false);
+      return;
+    }
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/chat`, {
@@ -120,7 +137,34 @@ function AIAssistantChat() {
       });
 
       if (!res.ok) {
-        throw new Error("Chat request failed");
+        let errorMessage = `Chat request failed (HTTP ${res.status}).`;
+        try {
+          const errorData: unknown = await res.json();
+          if (
+            typeof errorData === "object" &&
+            errorData !== null &&
+            "detail" in errorData &&
+            typeof errorData.detail === "string"
+          ) {
+            errorMessage = errorData.detail;
+          }
+        } catch {
+          // Keep the HTTP status message when the error response is not JSON.
+        }
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: String(Date.now() + 1),
+            sender: "bot",
+            text: errorMessage,
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            }),
+          },
+        ]);
+        return;
       }
 
       const data = await res.json();
@@ -251,4 +295,3 @@ export default function AIAssistantPage() {
     </Suspense>
   );
 }
-
